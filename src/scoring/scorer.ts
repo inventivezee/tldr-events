@@ -31,6 +31,11 @@ const SCORE_TOOL: ToolDef = {
         enum: ["ai", "longevity", "fintech_blockchain", "hackathon", "founder_investor"],
         description: "Single best niche for display.",
       },
+      industry_relevant: {
+        type: "boolean",
+        description:
+          "True if the event is connected to the startup/founder/investor/tech world at all (including builder communities like Beta University, YC/Startup School) — even a low-quality relevant event is true. False ONLY for pure social/consumer/hobby events (bar crawls, film nights, run clubs).",
+      },
       tldr: {
         type: "string",
         description:
@@ -46,7 +51,7 @@ const SCORE_TOOL: ToolDef = {
         },
       },
     },
-    required: ["score", "category_tag", "tldr", "signals"],
+    required: ["score", "category_tag", "industry_relevant", "tldr", "signals"],
   },
 };
 
@@ -286,6 +291,7 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
       score: score.toFixed(1),
       tier,
       categoryTag: r.category_tag ?? null,
+      relevant: r.industry_relevant !== false, // default to relevant when unsure
       tldr: r.tldr ?? null,
       signals: r.signals ?? {},
       model: feed.model || process.env.SCORING_MODEL || "claude-opus-4-8",
@@ -299,6 +305,7 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
         score: score.toFixed(1),
         tier,
         categoryTag: r.category_tag ?? null,
+        relevant: r.industry_relevant !== false,
         tldr: r.tldr ?? null,
         signals: r.signals ?? {},
         model: feed.model || process.env.SCORING_MODEL || "claude-opus-4-8",

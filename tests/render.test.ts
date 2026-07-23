@@ -20,6 +20,7 @@ function ev(i: number, tier: Tier, title = `Event ${i}`): DeliveryEvent {
     tier,
     tldr: "A high-signal room worth crossing town for.",
     categoryTag: "ai",
+    relevant: true,
     notable: [{ name: "Jane Doe", note: "Partner at Sequoia", prominence: 9, title: "Partner", company: "Sequoia" }],
   };
 }

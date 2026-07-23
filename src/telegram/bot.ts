@@ -94,7 +94,8 @@ async function respond(
   const events = await queryDeliveryEvents({
     feedId: feed.id,
     regionId: feed.regionId ?? "sf_bay",
-    minScore: Number(feed.minScore ?? "6.0"),
+    minScore: 0,
+    relevantOnly: true,
     window,
   });
   if (events.length === 0) {

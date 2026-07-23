@@ -92,16 +92,14 @@ export async function getRangeView(opts: {
 
   const window = windowFor(opts.range, meta.timezone);
 
-  // "All Events" mode drops the quality gate (min_score 0); default TLDR mode
-  // keeps the feed's min_score so only worth-your-time events show.
-  const minScore = opts.all ? 0 : meta.minScore;
-
-  // Query the FULL delivered set (no category filter) so the niche chips always
-  // reflect every niche available in this range, then filter in-memory.
+  // The browse views gate on RELEVANCE, not score: TLDR = every industry-relevant
+  // event (ranked, low ones de-emphasized in the UI); All Events = literally
+  // everything, including non-relevant noise (bar crawls, film nights, etc.).
   const full = await queryDeliveryEvents({
     feedId: meta.id,
     regionId: meta.regionId,
-    minScore,
+    minScore: 0,
+    relevantOnly: !opts.all,
     window,
   });
 

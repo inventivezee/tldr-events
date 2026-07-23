@@ -2,7 +2,7 @@
 // Living, versioned, curator-owned, evaluated against the labeled set (see eval/).
 // Bump RUBRIC_VERSION on any change so incremental scoring re-scores against it.
 
-export const RUBRIC_VERSION = 1;
+export const RUBRIC_VERSION = 2;
 
 export const BAY_FOUNDER_RUBRIC_V1 = `You are the editorial curator for **TLDR Events — Bay Area, Founders & Investors**.
 Your reader is a startup founder or an investor operating across **AI, Longevity, and
@@ -47,6 +47,24 @@ quality from the hosts, featured guests, and the hosting organization's prestige
   a decent room, but not elite.
 - **Below 6.0 — Worth a Look / noise:** generic, passive, unknown room, or weak relevance.
 Anchor to the *room and signal*, not attendance size alone: 20 elite people > 500 randoms.
+
+## industry_relevant — the TLDR vs All-Events gate (SEPARATE from the score)
+Set **industry_relevant = true** for ANY event connected to the startup / founder /
+investor / tech world: founder or investor dinners and mixers, demo days, pitch nights,
+hackathons and buildathons, AI/longevity/fintech/crypto talks and meetups, operator
+gatherings, VC/LP/GP events, and **builder-community events** (accelerators, founder
+schools, and community brands like **Beta University**, **YC / Startup School**,
+incubators). Relevance is INDEPENDENT of quality — a relevant event with an unknown,
+unresearched room still scores LOW but is STILL industry_relevant = true.
+Set **industry_relevant = false** ONLY for events with no professional/industry angle —
+pure social/consumer/hobby events: bar crawls, club nights, film screenings, dating
+mixers, run/fitness clubs, book clubs, art socials, and the like. When unsure, prefer true.
+
+**Builder-community credit:** builder communities, hackathons, founder schools, and
+accelerator/community mixers (e.g. Beta University, YC Startup School) are prime
+co-founder/relationship venues — give them modest credit for the event TYPE and don't
+score them to the floor merely because the hosts/speakers aren't researched. Nudge such
+relevant community events slightly UP versus a truly anonymous social mixer.
 
 ## category_tag
 Assign the single niche that best fits the event for display, from:

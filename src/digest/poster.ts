@@ -121,6 +121,7 @@ async function postOne(
     feedId: feed.id,
     regionId: feed.regionId ?? "sf_bay",
     minScore: Number(feed.minScore ?? "6.0"),
+    relevantOnly: true,
     window,
   });
 

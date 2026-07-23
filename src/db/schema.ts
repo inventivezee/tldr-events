@@ -128,6 +128,7 @@ export const scores = pgTable(
     score: numeric("score", { precision: 3, scale: 1 }).notNull(),
     tier: text("tier").notNull(),
     categoryTag: text("category_tag"),
+    relevant: boolean("relevant").default(true),
     tldr: text("tldr"),
     signals: jsonb("signals").$type<Record<string, unknown>>(),
     model: text("model"),

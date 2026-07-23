@@ -28,6 +28,7 @@ export interface DeliveryEvent {
   tier: Tier;
   tldr: string | null;
   categoryTag: string | null;
+  relevant: boolean;
   notable: NotablePerson[];
 }
 
@@ -39,6 +40,7 @@ export async function queryDeliveryEvents(params: {
   minScore: number;
   window: UtcWindow;
   categoryTag?: string;
+  relevantOnly?: boolean;
   limit?: number;
 }): Promise<DeliveryEvent[]> {
   const db = getDb();
@@ -58,6 +60,7 @@ export async function queryDeliveryEvents(params: {
       tier: schema.scores.tier,
       tldr: schema.scores.tldr,
       categoryTag: schema.scores.categoryTag,
+      relevant: schema.scores.relevant,
     })
     .from(schema.events)
     .innerJoin(
@@ -78,6 +81,7 @@ export async function queryDeliveryEvents(params: {
         params.categoryTag
           ? eq(schema.scores.categoryTag, params.categoryTag)
           : sql`true`,
+        params.relevantOnly ? eq(schema.scores.relevant, true) : sql`true`,
       ),
     )
     .orderBy(schema.events.startsAt, sql`${schema.scores.score} desc`);
@@ -128,6 +132,7 @@ export async function queryDeliveryEvents(params: {
       tier: r.tier as Tier,
       tldr: r.tldr,
       categoryTag: r.categoryTag,
+      relevant: r.relevant ?? true,
       notable: notable.slice(0, 3),
     };
   });

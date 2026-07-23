@@ -76,6 +76,10 @@ export interface ScoreResult {
   score: number; // 0.0–10.0
   tier: Tier;
   category_tag: Category | string;
+  /** Is this event relevant to the founder/investor/tech-startup industry at all?
+   *  Drives the TLDR vs All-Events split (relevant → TLDR even if low-scored;
+   *  non-relevant noise like bar crawls / film meetups → All only). */
+  industry_relevant: boolean;
   signals: {
     attendee_count?: number | null;
     attendee_quality?: number | null; // 0–10

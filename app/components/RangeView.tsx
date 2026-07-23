@@ -64,15 +64,40 @@ export async function RangeView({
         </div>
       ) : (
         <>
-          {view.tiers.map((g) => (
-            <TierGroup
-              key={g.tier}
-              tier={g.tier}
-              events={g.events}
-              feedId={view.meta.id}
-              tz={view.meta.timezone}
-            />
-          ))}
+          {view.tiers
+            .filter((g) => g.tier !== "radar")
+            .map((g) => (
+              <TierGroup
+                key={g.tier}
+                tier={g.tier}
+                events={g.events}
+                feedId={view.meta.id}
+                tz={view.meta.timezone}
+              />
+            ))}
+
+          {/* Lower-ranked events (👀 Worth a Look) are collapsed last, so the
+              curated picks lead and you scroll/expand to see the rest. */}
+          {view.tiers
+            .filter((g) => g.tier === "radar")
+            .map((g) => (
+              <details key={g.tier} className="mb-8">
+                <summary
+                  className="mb-3 inline-flex cursor-pointer items-center gap-2 rounded-full px-4 py-2 text-sm font-medium"
+                  style={{ background: "var(--panel)", border: "1px solid var(--border)", color: "var(--muted)" }}
+                >
+                  👀 Show {g.events.length} more lower-ranked{" "}
+                  {g.events.length === 1 ? "event" : "events"}
+                </summary>
+                <TierGroup
+                  tier={g.tier}
+                  events={g.events}
+                  feedId={view.meta.id}
+                  tz={view.meta.timezone}
+                />
+              </details>
+            ))}
+
           <div className="mt-8 flex justify-center">
             <FollowButton />
           </div>
