@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0b0c10;
+  --panel: #14161c;
+  --panel-2: #1b1e26;
+  --border: #262a34;
+  --text: #e8eaed;
+  --muted: #9aa0ac;
+  --accent: #7c9cff;
+  --accent-2: #22d3ee;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --panel-2: #f0f2f6;
+    --border: #e2e5ea;
+    --text: #14161c;
+    --muted: #5b616e;
+    --accent: #3b5bff;
+    --accent-2: #0891b2;
+  }
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.container-tldr {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
