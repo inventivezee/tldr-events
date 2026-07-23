@@ -124,12 +124,12 @@ Bottom line: **stay on Vercel** unless live runs show the browser scrapes consis
 
 ## Known things to validate/tune against live data
 
-These are honest caveats — the deterministic core is unit-tested (`npm test`), but the following need real credentials + live sites to confirm:
+Validated live (2026-07): **Luma ~210, Eventbrite ~107, Cerebral Valley ~135, Partiful ~44** events per run; dedup, speaker research (Browserbase + LLM), and Opus scoring all run end-to-end. Remaining caveats:
 
-- **Scraper selectors** (Cerebral Valley, Eventbrite, Partiful, Google) follow the PRD's Appendix A recipes; DOMs drift, so expect to tune selectors on first live runs. Each adapter logs a `SCHEMA DRIFT?` warning when a page has content but nothing parsed.
-- **Luma endpoints** default to `https://api.lu.ma`; if that host/shape is wrong, set `LUMA_API_BASE` and adjust `src/ingestion/adapters/luma.ts`.
-- **Google** has the highest block risk; residential proxies + spacing mitigate but tune the query set (PRD open question #1).
-- **Ingest duration**: if the browser scrapes push a run past the function limit, split sources across more crons or raise `maxDuration` (fluid compute). Backbone-first ordering protects the essential data meanwhile.
+- **Google requires residential proxies to be ENABLED on your Browserbase project.** With a datacenter exit IP, Google serves its `/sorry` "unusual traffic" bot wall and the adapter returns 0 (it detects this and logs a clear warning). Enable residential proxies in Browserbase, or treat Google as an optional supplement — the other four sources give strong coverage, and the PRD's documented alternative is the Meetup GraphQL API (`MEETUP_API_TOKEN`). Google also heavily overlaps the other sources (resolved by dedup).
+- **Scraper selectors** (Cerebral Valley, Eventbrite, Partiful) work today but DOMs drift; each adapter logs a `SCHEMA DRIFT?` warning when a page has content but nothing parses, so drift is visible.
+- **Luma endpoints** default to `https://api.lu.ma`; override with `LUMA_API_BASE` if the host/shape changes.
+- **Ingest duration**: batched upserts + backbone-first ordering keep runs fast; the pipeline is split into `/api/cron/ingest` (core) and `/api/cron/ingest-extra` (Partiful/Google) so neither starves the other.
 
 ## Tests / typecheck
 

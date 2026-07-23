@@ -34,6 +34,21 @@ export const fetchGoogle: FetchFn = async (source, ctx) => {
       await maybeAcceptConsent(page);
       await sleep(1200);
 
+      // Detect Google's bot wall (/sorry). Happens when the exit IP is a
+      // datacenter IP — residential proxies must be enabled on the Browserbase
+      // project. No point hammering the remaining queries against a block.
+      const blocked = await page.evaluate(
+        () =>
+          location.href.includes("/sorry/") ||
+          /unusual traffic|not a robot|detected unusual/i.test(document.body.innerText),
+      );
+      if (blocked) {
+        log.warn(
+          `${source.id}: blocked by Google bot-check — enable residential proxies on Browserbase (see README). Skipping remaining queries.`,
+        );
+        break;
+      }
+
       const rows: Array<{ title: string; href: string; context: string }> =
         await page.evaluate(() => {
           const out: Array<{ title: string; href: string; context: string }> = [];
