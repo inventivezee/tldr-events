@@ -14,7 +14,7 @@ export function EventCard({
   tz: string;
 }) {
   const ptLabel = `${fmtLocalDate(event.startsAt, tz)} · ${fmtLocalTime(event.startsAt, tz)} PT`;
-  const href = clickUrl(event.id, feedId, "web", event.url);
+  const href = clickUrl(event.id, feedId, "web");
   const tag = categoryLabel(event.categoryTag);
 
   return (

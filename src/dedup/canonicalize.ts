@@ -12,7 +12,6 @@ import {
   tokenSetRatio,
   haversineMeters,
 } from "@/lib/text";
-import { contentHash } from "@/lib/hash";
 import { logger } from "@/lib/logger";
 
 const log = logger("dedup");
@@ -171,11 +170,13 @@ export async function runDedup(opts?: {
 
   let primaries = 0;
   for (const members of components.values()) {
-    // Primary = lowest priority (most authoritative); tie-break longest desc.
+    // Primary = lowest priority (most authoritative); tie-break longest desc,
+    // then event id so selection (and the resulting content_hash) is deterministic.
     members.sort(
       (a, b) =>
         a.priority - b.priority ||
-        (b.description?.length ?? 0) - (a.description?.length ?? 0),
+        (b.description?.length ?? 0) - (a.description?.length ?? 0) ||
+        a.id.localeCompare(b.id),
     );
     const primary = members[0];
     const groupId = primary.id;
@@ -200,7 +201,9 @@ export async function runDedup(opts?: {
             lat: enriched.lat,
             lng: enriched.lng,
             status: enriched.status,
-            contentHash: enriched.contentHash,
+            // NOTE: content_hash is intentionally NOT written here. It is owned
+            // solely by ingestion (derived from the source row), so it stays a
+            // stable incremental-scoring key and isn't churned by re-enrichment.
           })
           .where(inArray(schema.events.id, [m.id]));
         primaries++;
@@ -226,14 +229,21 @@ export async function runDedup(opts?: {
 function venueNearby(a: Row, b: Row): boolean {
   const va = normalizeVenue(a.venueName ?? a.venueNormalized ?? "");
   const vb = normalizeVenue(b.venueName ?? b.venueNormalized ?? "");
-  if (va && vb && va === vb) return true;
+  const haveCoords =
+    a.lat != null && a.lng != null && b.lat != null && b.lng != null;
+  const geoClose =
+    haveCoords && haversineMeters(a.lat!, a.lng!, b.lat!, b.lng!) <= VENUE_METERS;
+
+  // Both venues named: same name OR provably-close coords. Two DIFFERENT named
+  // venues in the same city are NOT "nearby" (avoids merging distinct events).
+  if (va && vb) return va === vb || geoClose;
+  // A venue name is missing: trust coordinates when we have them.
+  if (haveCoords) return geoClose;
+  // No venue names and no coords: fall back to same city (last resort; the
+  // title match must still clear the fuzzy threshold to actually merge).
   const ca = normalizeText(a.city);
   const cb = normalizeText(b.city);
-  if (ca && cb && ca === cb) return true;
-  if (a.lat != null && a.lng != null && b.lat != null && b.lng != null) {
-    if (haversineMeters(a.lat, a.lng, b.lat, b.lng) <= VENUE_METERS) return true;
-  }
-  return false;
+  return !!(ca && cb && ca === cb);
 }
 
 function enrichPrimary(primary: Row, members: Row[]) {
@@ -269,19 +279,6 @@ function enrichPrimary(primary: Row, members: Row[]) {
   )[0];
   const status = latest?.status ?? primary.status;
 
-  const contentHashValue = contentHash({
-    title: primary.title,
-    startsAt: primary.startsAt,
-    endsAt: primary.endsAt,
-    status,
-    venueName,
-    city,
-    description,
-    guestCount,
-    hosts,
-    speakers,
-  });
-
   return {
     description,
     guestCount,
@@ -293,7 +290,6 @@ function enrichPrimary(primary: Row, members: Row[]) {
     lat,
     lng,
     status,
-    contentHash: contentHashValue,
   };
 }
 

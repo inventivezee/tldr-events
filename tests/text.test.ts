@@ -33,6 +33,18 @@ describe("tokenSetRatio", () => {
       tokenSetRatio("Longevity Investor Roundtable", "Fintech Happy Hour"),
     ).toBeLessThan(90);
   });
+  it("does NOT over-merge a short generic title into an unrelated longer one", () => {
+    // "AI Meetup" is a subset of the longer title, but the titles are otherwise
+    // very different — must stay below the merge threshold.
+    expect(
+      tokenSetRatio("AI Meetup", "AI Meetup Deep Dive: Transformers, RAG, and Agents"),
+    ).toBeLessThan(90);
+  });
+  it("does NOT merge two distinct same-topic events with different specifics", () => {
+    expect(
+      tokenSetRatio("Founder Dinner", "Founder Dinner with a16z Partners at the Ferry Building"),
+    ).toBeLessThan(90);
+  });
 });
 
 describe("normalizeName", () => {

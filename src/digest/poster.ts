@@ -2,7 +2,7 @@
 // post schedules (timezone-aware), build the ranked digest, post to the public
 // Telegram channel, and log to digest_posts. `force` bypasses the schedule for
 // shadow-mode QA (Milestone 3).
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import type { FeedRow } from "@/db/schema";
 import type { DigestKind, PostSchedule } from "@/types";
@@ -20,7 +20,7 @@ export interface PosterResult {
   posted: boolean;
   events: number;
   messages: number;
-  status: "sent" | "failed" | "skipped";
+  status: "sent" | "failed" | "partial" | "skipped";
   reason?: string;
 }
 
@@ -54,12 +54,11 @@ export async function runDigestPoster(opts?: {
       continue;
     }
 
-    const kinds: DigestKind[] = opts?.force
-      ? [opts.force]
-      : await dueKinds(feed, tz, now);
+    const forced = !!opts?.force;
+    const kinds: DigestKind[] = forced ? [opts!.force!] : await dueKinds(feed, tz, now);
 
     for (const kind of kinds) {
-      out.push(await postOne(feed, kind, tz, channelId, now));
+      out.push(await postOne(feed, kind, tz, channelId, now, forced));
     }
   }
   return out;
@@ -88,6 +87,9 @@ async function dueKinds(feed: FeedRow, tz: string, now: Date): Promise<DigestKin
 
 async function postedSince(feedId: string, kind: DigestKind, cutoff: Date): Promise<boolean> {
   const db = getDb();
+  // Count anything that emitted ≥1 message ('sent' or 'partial') as "done for this
+  // period", so a partial send is never re-sent from scratch (no duplicate posts).
+  // A total failure ('failed', 0 messages sent) is NOT counted → safe to retry.
   const [row] = await db
     .select({ id: schema.digestPosts.id })
     .from(schema.digestPosts)
@@ -95,7 +97,7 @@ async function postedSince(feedId: string, kind: DigestKind, cutoff: Date): Prom
       and(
         eq(schema.digestPosts.feedId, feedId),
         eq(schema.digestPosts.kind, kind),
-        eq(schema.digestPosts.status, "sent"),
+        inArray(schema.digestPosts.status, ["sent", "partial"]),
         gte(schema.digestPosts.postedAt, cutoff),
       ),
     )
@@ -110,6 +112,7 @@ async function postOne(
   tz: string,
   channelId: string,
   now: Date,
+  forced = false,
 ): Promise<PosterResult> {
   const db = getDb();
   const window: UtcWindow = kind === "daily" ? dailyWindow(now, tz) : weeklyWindow(now, tz);
@@ -129,7 +132,7 @@ async function postOne(
   const chunks = renderDigestMessages(feed, events, kind, tz);
   const messageIds: number[] = [];
   let migrated: string | undefined;
-  let failed = false;
+  let failedMidway = false;
 
   for (const chunk of chunks) {
     try {
@@ -138,15 +141,25 @@ async function postOne(
       if (res.migratedChatId) migrated = String(res.migratedChatId);
     } catch (e) {
       log.error(`send failed for feed ${feed.id} (${kind})`, e);
-      failed = true;
+      failedMidway = true;
       break;
     }
   }
 
-  const status: "sent" | "failed" = failed ? "failed" : "sent";
+  // 'sent' = all chunks delivered; 'partial' = some delivered then errored (must
+  // NOT be re-sent → dedup counts it as done); 'failed' = nothing delivered (safe
+  // to retry next run).
+  const status: "sent" | "failed" | "partial" = failedMidway
+    ? messageIds.length > 0
+      ? "partial"
+      : "failed"
+    : "sent";
+
   await db.insert(schema.digestPosts).values({
     feedId: feed.id,
-    kind,
+    // Forced/QA posts get a distinct kind so they don't suppress the real
+    // scheduled digest's due-check (which queries kind 'daily'/'weekly').
+    kind: forced ? `${kind}_manual` : kind,
     windowStart: window.start,
     windowEnd: window.end,
     eventIds: events.map((e) => e.id),
@@ -167,7 +180,7 @@ async function postOne(
   return {
     feedId: feed.id,
     kind,
-    posted: status === "sent",
+    posted: messageIds.length > 0,
     events: events.length,
     messages: messageIds.length,
     status,

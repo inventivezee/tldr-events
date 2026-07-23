@@ -110,11 +110,12 @@ export function dailyWindow(now: Date, tz: string): UtcWindow {
   return { start: start.toUTC().toJSDate(), end: end.toUTC().toJSDate() };
 }
 
-/** Weekly digest window: now → +7 local days (PRD §12.1). */
+/** Weekly digest window: the next 7 local days, today .. +6 (PRD §12.1).
+ *  Ends at +6 end-of-day so "next week" (+7 .. +13) does not overlap. */
 export function weeklyWindow(now: Date, tz: string): UtcWindow {
   const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz);
   const start = local.startOf("day");
-  const end = local.plus({ days: 7 }).endOf("day");
+  const end = local.plus({ days: 6 }).endOf("day");
   return { start: start.toUTC().toJSDate(), end: end.toUTC().toJSDate() };
 }
 

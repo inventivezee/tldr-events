@@ -29,6 +29,7 @@ function tokenSet(s: string): Set<string> {
 }
 
 const TOKEN_MATCH = 85; // two tokens count as "the same" above this ratio
+const CONTAINMENT_FLOOR = 60; // min overall sort-ratio before a subset match is trusted
 
 /**
  * Token-set ratio in [0,100], robust to word order, extra qualifiers, and
@@ -54,7 +55,13 @@ export function tokenSetRatio(a: string, b: string): number {
   }
   const containment = (matched / small.length) * 100;
 
-  return Math.round(Math.max(sortRatio, containment));
+  // Containment alone (100 whenever the smaller title is a subset) over-merges a
+  // short/generic title into an unrelated longer one. Only trust it when the two
+  // titles are also reasonably similar OVERALL (sort ratio floor) — i.e. the
+  // larger title adds only a few qualifier tokens, not a whole different subject.
+  const containmentTrusted = sortRatio >= CONTAINMENT_FLOOR ? containment : 0;
+
+  return Math.round(Math.max(sortRatio, containmentTrusted));
 }
 
 /** Levenshtein similarity ratio in [0,100]. */

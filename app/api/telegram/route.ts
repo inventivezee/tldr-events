@@ -10,9 +10,11 @@ export const dynamic = "force-dynamic";
 const log = logger("tg-webhook");
 
 export async function POST(req: NextRequest) {
+  // Fail closed: the webhook must always be protected. A missing secret means
+  // misconfiguration, not "open to everyone".
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const header = req.headers.get("x-telegram-bot-api-secret-token");
-  if (secret && header !== secret) {
+  if (!secret || header !== secret) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 

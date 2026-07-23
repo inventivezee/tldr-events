@@ -91,7 +91,8 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
   }
 
   const now = new Date();
-  const { start, end } = forwardWindow(now, "America/Los_Angeles", 21);
+  const tz = await regionTz(feed.regionId ?? "sf_bay");
+  const { start, end } = forwardWindow(now, tz, 21);
 
   // Candidate set: every PRIMARY ACTIVE event in the feed's region + window.
   const candidates = await db
@@ -130,7 +131,7 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
   let scored = 0;
   for (const e of work) {
     try {
-      const result = await scoreEvent(feed, e);
+      const result = await scoreEvent(feed, e, tz);
       await writeScore(feed, e, result);
       scored++;
     } catch (err) {
@@ -189,7 +190,7 @@ export async function scoreWithRubric(input: ScoringInput): Promise<ScoreResult>
   });
 }
 
-async function scoreEvent(feed: FeedRow, e: EventRow): Promise<ScoreResult> {
+async function scoreEvent(feed: FeedRow, e: EventRow, tz: string): Promise<ScoreResult> {
   const speakers = (e.speakers ?? []) as PersonRef[];
   const hosts = (e.hosts ?? []) as PersonRef[];
   const names = [...hosts, ...speakers].map((p) => p.name).filter(Boolean);
@@ -205,6 +206,7 @@ async function scoreEvent(feed: FeedRow, e: EventRow): Promise<ScoreResult> {
     model: feed.model || process.env.SCORING_MODEL || "claude-opus-4-8",
     title: e.title,
     startsAt: e.startsAt,
+    tz,
     city: e.city,
     venueName: e.venueName,
     guestCount: e.guestCount,
@@ -311,4 +313,14 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
 function clamp(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.max(lo, Math.min(hi, n));
+}
+
+async function regionTz(regionId: string): Promise<string> {
+  const db = getDb();
+  const [r] = await db
+    .select({ tz: schema.regions.timezone })
+    .from(schema.regions)
+    .where(eq(schema.regions.id, regionId))
+    .limit(1);
+  return r?.tz ?? "America/Los_Angeles";
 }

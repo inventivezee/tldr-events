@@ -84,9 +84,18 @@ export async function structuredCall<T = unknown>(opts: StructuredOpts): Promise
       _in += resp.usage?.input_tokens ?? 0;
       _out += resp.usage?.output_tokens ?? 0;
 
+      // A max_tokens stop means the tool JSON may be truncated → retry, don't
+      // accept a half-built object.
+      if (resp.stop_reason === "max_tokens") {
+        throw new Error("response truncated (max_tokens) — tool call may be incomplete");
+      }
+
       const block = resp.content.find((c) => c.type === "tool_use");
       if (!block || block.type !== "tool_use") {
         throw new Error("model did not return a tool_use block");
+      }
+      if (!block.input || typeof block.input !== "object") {
+        throw new Error("tool_use input was not an object");
       }
       return block.input as T;
     } catch (e) {

@@ -31,7 +31,7 @@ function notableText(notable: NotablePerson[]): string {
 
 function eventBlock(e: DeliveryEvent, feedId: string, tz: string): DigestChunk {
   const icon = TIER_ICON[e.tier];
-  const link = clickUrl(e.id, feedId, "telegram", e.url);
+  const link = clickUrl(e.id, feedId, "telegram");
   const title = htmlEscape(truncate(e.title, 120));
   const score = e.score.toFixed(1).replace(/\.0$/, "");
 

@@ -33,32 +33,54 @@ export function getDb() {
 export { schema };
 
 /**
- * Run `fn` while holding a transaction-scoped advisory lock, so overlapping
- * cron invocations of the same job can't clobber each other. Returns
- * `{ ran: false }` if the lock is already held (another run in flight).
+ * Run `fn` under a lease-based lock (job_locks table), so overlapping cron
+ * invocations of the same job can't run concurrently — WITHOUT holding a
+ * transaction open for the whole job (which would tie up a pooled connection
+ * idle-in-transaction across minutes of browser/LLM I/O). The lease auto-expires
+ * after `ttlSeconds` so a crashed job doesn't wedge the lock forever.
+ * Returns `{ ran: false }` if another run currently holds the lease.
  */
 export async function withJobLock<T>(
-  lockKey: number,
+  name: string,
+  ttlSeconds: number,
   fn: () => Promise<T>,
 ): Promise<{ ran: true; result: T } | { ran: false }> {
   const sql = sqlClient();
-  return sql.begin(async (tx) => {
-    const [{ locked }] = await tx<{ locked: boolean }[]>`
-      select pg_try_advisory_xact_lock(${lockKey}) as locked
-    `;
-    if (!locked) return { ran: false as const };
+  const until = new Date(Date.now() + ttlSeconds * 1000);
+  // Acquire iff no row, or the existing lease has expired. Atomic via row lock.
+  const acquired = await sql`
+    insert into job_locks (name, locked_until, updated_at)
+    values (${name}, ${until}, now())
+    on conflict (name) do update
+      set locked_until = ${until}, updated_at = now()
+      where job_locks.locked_until < now()
+    returning name
+  `;
+  if (acquired.length === 0) return { ran: false as const };
+  try {
     const result = await fn();
     return { ran: true as const, result };
-  });
+  } finally {
+    // Release early so the next scheduled run isn't blocked by a stale lease.
+    await sql`update job_locks set locked_until = now() where name = ${name}`;
+  }
 }
 
-/** Stable-ish integer lock keys per job type. */
+/** Lock names + lease TTLs (seconds) per job type. */
 export const LOCK = {
-  ingest: 811001,
-  dedup: 811002,
-  research: 811003,
-  score: 811004,
-  digest: 811005,
+  ingest: "ingest",
+  dedup: "dedup",
+  research: "research",
+  score: "score",
+  digest: "digest",
 } as const;
+
+export const LOCK_TTL: Record<string, number> = {
+  ingest: 600,
+  dedup: 300,
+  research: 600,
+  score: 600,
+  digest: 180,
+};
 
 export { dsql };

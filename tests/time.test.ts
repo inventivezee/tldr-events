@@ -60,11 +60,11 @@ describe("windows", () => {
     expect(days).toBeGreaterThan(1.5);
     expect(days).toBeLessThan(2.1);
   });
-  it("weekly window spans ~8 local days", () => {
+  it("weekly window spans ~7 local days (today..+6, no overlap with next week)", () => {
     const now = new Date("2026-07-22T20:00:00Z");
     const w = weeklyWindow(now, PT);
     const days = (w.end.getTime() - w.start.getTime()) / 86400000;
-    expect(days).toBeGreaterThan(7);
-    expect(days).toBeLessThan(8.1);
+    expect(days).toBeGreaterThan(6.9);
+    expect(days).toBeLessThan(7.05);
   });
 });

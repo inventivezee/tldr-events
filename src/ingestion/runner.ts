@@ -36,9 +36,13 @@ export interface IngestSummary {
 
 export async function runIngestion(opts?: {
   sourceIds?: string[];
+  budgetMs?: number;
 }): Promise<IngestSummary> {
   const db = getDb();
   const now = new Date();
+  // Stop starting new sources past this soft deadline so the finally-block can
+  // close the browser session before Vercel's maxDuration hard-kill.
+  const deadline = Date.now() + (opts?.budgetMs ?? 240000);
 
   // Order by priority asc → the fast Luma backbone (priority 10–20) runs before
   // the slower browser scrapes, so a run that hits the function time limit still
@@ -72,6 +76,18 @@ export async function runIngestion(opts?: {
 
   try {
     for (const source of sources) {
+      if (Date.now() > deadline) {
+        log.warn(`time budget reached; skipping ${source.id} (and any remaining)`);
+        results.push({
+          sourceId: source.id,
+          ok: false,
+          count: 0,
+          upserted: 0,
+          changed: 0,
+          error: "skipped: time budget reached",
+        });
+        continue;
+      }
       if (needsBrowser(source) && !session) {
         results.push({
           sourceId: source.id,

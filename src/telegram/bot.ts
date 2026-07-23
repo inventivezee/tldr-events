@@ -67,8 +67,9 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
     // Admin/test commands (gated).
     case "/post_daily":
     case "/post_weekly": {
+      // Fail closed: with no allowlist configured, NO ONE may run admin commands.
       const allow = allowedChatIds();
-      if (allow.length && !allow.includes(fromId)) {
+      if (!allow.includes(fromId)) {
         await sendMessage(chatId, "Not authorized.");
         return;
       }
@@ -135,6 +136,6 @@ function nextWeekWindow(tz: string): UtcWindow {
   const local = DateTime.now().setZone(tz);
   return {
     start: local.plus({ days: 7 }).startOf("day").toUTC().toJSDate(),
-    end: local.plus({ days: 14 }).endOf("day").toUTC().toJSDate(),
+    end: local.plus({ days: 13 }).endOf("day").toUTC().toJSDate(),
   };
 }

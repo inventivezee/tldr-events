@@ -61,9 +61,13 @@ export async function runEval(model: string): Promise<EvalReport> {
 
   const modelTop = rows.filter((r) => r.got === "dont_miss");
   const trueTop = rows.filter((r) => r.expected === "dont_miss");
+  // If the rubric flags NO top-tier events at all, precision is 0 (a degenerate
+  // rubric must not score as "100% precise"), unless there were truly none to find.
   const topTierPrecision = modelTop.length
     ? modelTop.filter((r) => r.expected === "dont_miss").length / modelTop.length
-    : 1;
+    : trueTop.length === 0
+      ? 1
+      : 0;
   const topTierRecall = trueTop.length
     ? trueTop.filter((r) => r.got === "dont_miss").length / trueTop.length
     : 1;

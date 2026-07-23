@@ -10,8 +10,8 @@ export function clickUrl(
   eventId: string,
   feedId: string,
   surface: "telegram" | "web",
-  sourceUrl: string | null | undefined,
 ): string {
-  const base = `${siteUrl()}/api/click?e=${encodeURIComponent(eventId)}&f=${encodeURIComponent(feedId)}&s=${surface}`;
-  return sourceUrl ? `${base}&u=${encodeURIComponent(sourceUrl)}` : base;
+  // Target is resolved from the DB in /api/click (never from the query string),
+  // so we only pass identifiers here.
+  return `${siteUrl()}/api/click?e=${encodeURIComponent(eventId)}&f=${encodeURIComponent(feedId)}&s=${surface}`;
 }

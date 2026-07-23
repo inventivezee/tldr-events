@@ -64,17 +64,19 @@ export async function getWeekView(opts: {
       ? weeklyWindow(new Date(), meta.timezone)
       : nextWeekWindow(meta.timezone);
 
-  let events = await queryDeliveryEvents({
+  // Query the FULL delivered set (no category filter) so the niche chips always
+  // reflect every niche available this week, then filter in-memory.
+  const full = await queryDeliveryEvents({
     feedId: meta.id,
     regionId: meta.regionId,
     minScore: meta.minScore,
     window,
-    categoryTag: opts.categoryTag,
   });
 
-  // Distinct category tags present (for filter chips) — before tier filter.
-  const categories = [...new Set(events.map((e) => e.categoryTag).filter(Boolean))] as string[];
+  const categories = [...new Set(full.map((e) => e.categoryTag).filter(Boolean))] as string[];
 
+  let events = full;
+  if (opts.categoryTag) events = events.filter((e) => e.categoryTag === opts.categoryTag);
   if (opts.tier) events = events.filter((e) => e.tier === opts.tier);
 
   const byTier = new Map<Tier, DeliveryEvent[]>();
@@ -94,10 +96,11 @@ export async function getWeekView(opts: {
 }
 
 function nextWeekWindow(tz: string): UtcWindow {
+  // +7 .. +13 local days — contiguous with, and non-overlapping, "this week".
   const local = DateTime.now().setZone(tz);
   return {
     start: local.plus({ days: 7 }).startOf("day").toUTC().toJSDate(),
-    end: local.plus({ days: 14 }).endOf("day").toUTC().toJSDate(),
+    end: local.plus({ days: 13 }).endOf("day").toUTC().toJSDate(),
   };
 }
 
