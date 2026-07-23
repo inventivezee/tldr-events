@@ -39,7 +39,26 @@ interface Row {
   guestCount: number | null;
   lastSeenAt: Date | null;
   tz: string;
+  url: string | null;
+  urlKey: string;
   canonicalKey: string;
+}
+
+/** Normalized event URL (host+path) so cross-source rows pointing at the same
+ *  event page merge (e.g. Cerebral Valley/Google linking to a Luma event). */
+function urlKeyOf(url: string | null): string {
+  if (!url) return "";
+  try {
+    const u = new URL(url);
+    let host = u.hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "luma.com") host = "lu.ma"; // same platform, two hosts
+    const path = u.pathname.replace(/\/+$/, "").toLowerCase();
+    // Ignore bare domain / listing roots — only real event paths identify an event.
+    if (!path || path.length < 2) return "";
+    return `${host}${path}`;
+  } catch {
+    return "";
+  }
 }
 
 class UnionFind {
@@ -119,12 +138,27 @@ export async function runDedup(opts?: {
       guestCount: e.guestCount,
       lastSeenAt: e.lastSeenAt,
       tz,
+      url: e.url,
+      urlKey: urlKeyOf(e.url),
       canonicalKey,
     };
   });
 
   const uf = new UnionFind();
   for (const r of rows) uf.find(r.id);
+
+  // Stage 0 — same event URL across sources (e.g. Cerebral Valley / Google
+  // linking to a Luma event). A shared event page = definitely one event.
+  const byUrl = new Map<string, Row[]>();
+  for (const r of rows) {
+    if (!r.urlKey) continue;
+    const arr = byUrl.get(r.urlKey) ?? [];
+    arr.push(r);
+    byUrl.set(r.urlKey, arr);
+  }
+  for (const arr of byUrl.values()) {
+    for (let i = 1; i < arr.length; i++) uf.union(arr[0].id, arr[i].id);
+  }
 
   // Stage 1 — deterministic key.
   const byKey = new Map<string, Row[]>();
