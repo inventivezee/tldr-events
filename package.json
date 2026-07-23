@@ -27,14 +27,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
     "@browserbasehq/sdk": "^2.6.0",
-    "@neondatabase/serverless": "^0.10.4",
     "drizzle-orm": "^0.44.6",
     "luxon": "^3.7.2",
     "next": "^15.5.7",
     "playwright-core": "^1.56.0",
+    "postgres": "^3.4.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "ws": "^8.18.3",
     "zod": "^3.25.76"
   },
   "devDependencies": {
@@ -43,9 +42,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.1",
-    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.31.6",
-    "postgres": "^3.4.7",
     "tailwindcss": "^4.1.15",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
