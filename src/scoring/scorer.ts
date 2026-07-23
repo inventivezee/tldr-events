@@ -186,7 +186,6 @@ export async function scoreWithRubric(input: ScoringInput): Promise<ScoreResult>
     user: prompt,
     tool: SCORE_TOOL,
     maxTokens: 900,
-    temperature: 0.2,
   });
 }
 

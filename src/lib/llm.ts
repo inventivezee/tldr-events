@@ -51,7 +51,6 @@ export interface StructuredOpts {
   user: string;
   tool: ToolDef;
   maxTokens?: number;
-  temperature?: number;
 }
 
 /**
@@ -68,7 +67,8 @@ export async function structuredCall<T = unknown>(opts: StructuredOpts): Promise
       const resp = await client().messages.create({
         model,
         max_tokens: maxTokens,
-        temperature: opts.temperature ?? 0.2,
+        // NOTE: `temperature` is intentionally omitted — it is deprecated/rejected
+        // by newer models (e.g. claude-opus-4-8). Rely on the model default.
         system: opts.system,
         tools: [
           {
