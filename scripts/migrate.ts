@@ -41,8 +41,15 @@ async function main() {
       }
       const ddl = readFileSync(resolve(migrationsDir, file), "utf8");
       console.log(`  apply ${file} …`);
+      // postgres.js uses the extended protocol for unsafe(), which rejects
+      // multiple statements in one call — so split into individual statements.
+      // These migrations contain no ';' inside string literals or comments.
+      const statements = ddl
+        .split(/;\s*(?:\r?\n|$)/)
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0 && !/^(--[^\n]*\s*)+$/.test(s));
       await sql.begin(async (tx) => {
-        await tx.unsafe(ddl);
+        for (const stmt of statements) await tx.unsafe(stmt);
         await tx`insert into schema_migrations (filename) values (${file})`;
       });
       ran++;
