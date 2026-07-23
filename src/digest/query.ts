@@ -30,6 +30,7 @@ export interface DeliveryEvent {
   categoryTag: string | null;
   relevant: boolean;
   notable: NotablePerson[];
+  speakerNames: string[]; // raw host/speaker names (for the 🎤 line)
 }
 
 const NOTABLE_MIN_PROMINENCE = 6;
@@ -120,6 +121,16 @@ export async function queryDeliveryEvents(params: {
     }
     notable.sort((a, b) => (b.prominence ?? 0) - (a.prominence ?? 0));
 
+    // Raw host/speaker display names (deduped) for the digest's 🎤 line.
+    const speakerNames: string[] = [];
+    const nameSeen = new Set<string>();
+    for (const ref of refs) {
+      const key = normalizeName(ref.name);
+      if (!key || nameSeen.has(key)) continue;
+      nameSeen.add(key);
+      if (ref.name?.trim()) speakerNames.push(ref.name.trim());
+    }
+
     return {
       id: r.id,
       title: r.title,
@@ -134,6 +145,7 @@ export async function queryDeliveryEvents(params: {
       categoryTag: r.categoryTag,
       relevant: r.relevant ?? true,
       notable: notable.slice(0, 3),
+      speakerNames: speakerNames.slice(0, 4),
     };
   });
 

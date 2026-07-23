@@ -1,141 +1,131 @@
-// Telegram digest rendering (PRD §12.1, Appendix B). Tier-grouped, one block per
-// event, per-event inline "View" button, split under the 4096-char limit.
+// Telegram digest rendering (PRD §12.1). ONE compact message per digest — linked
+// event titles (direct to source), a single meta line, and speaker names. No
+// per-event summary, no inline buttons. Fits within Telegram's 4096-char cap
+// (truncates with a "more on the web" footer if needed).
 import type { FeedRow } from "@/db/schema";
 import type { DigestKind, Tier } from "@/types";
-import type { DeliveryEvent, NotablePerson } from "./query";
-import { fmtLocalTime, fmtLocalDate } from "@/lib/time";
-import { TIER_ICON, TIER_LABEL, TIER_ORDER, categoryLabel } from "@/scoring/tiers";
-import { htmlEscape, type InlineButton } from "@/telegram/api";
-import { clickUrl } from "@/lib/links";
+import type { DeliveryEvent } from "./query";
+import { DateTime } from "luxon";
+import { htmlEscape } from "@/telegram/api";
+import { siteUrl } from "@/lib/links";
 
-const MAX_CHARS = 3800; // safety margin under Telegram's 4096
+const MAX_CHARS = 3950; // safety margin under Telegram's 4096
 
-export interface DigestChunk {
-  html: string;
-  buttons: InlineButton[];
-}
+const CAT_EMOJI: Record<string, string> = {
+  ai: "🤖",
+  longevity: "🧬",
+  fintech_blockchain: "🔒",
+  founder_investor: "🌟",
+  hackathon: "🛠️",
+};
+
+const SECTION: Record<Tier, string> = {
+  dont_miss: "🔥 <b>Must Attend (8-10)</b>",
+  strong: "⚡ <b>Strong Picks (6-7)</b>",
+  radar: "👀 <b>Worth a Look</b>",
+};
+const TIER_SEQUENCE: Tier[] = ["dont_miss", "strong", "radar"];
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
 }
 
-function notableText(notable: NotablePerson[]): string {
-  if (!notable.length) return "";
-  return notable
-    .map((p) => {
-      const org = p.company ? ` (${p.company})` : "";
-      return `${htmlEscape(p.name)}${htmlEscape(org)}`;
-    })
-    .join(", ");
+function urlAttr(u: string): string {
+  return u.replace(/&/g, "&amp;").replace(/"/g, "%22");
 }
 
-function eventBlock(e: DeliveryEvent, feedId: string, tz: string): DigestChunk {
-  const icon = TIER_ICON[e.tier];
-  const link = clickUrl(e.id, feedId, "telegram");
-  const title = htmlEscape(truncate(e.title, 120));
-  const score = e.score.toFixed(1);
-
-  const meta: string[] = [`🕐 ${fmtLocalTime(e.startsAt, tz)}`];
-  if (e.city) meta.push(`📍 ${htmlEscape(e.city)}`);
-  if (e.guestCount != null && e.guestCount > 0) meta.push(`👥 ${e.guestCount}`);
-  const notable = notableText(e.notable);
-  if (notable) meta.push(`🎤 ${notable}`);
-  const tag = categoryLabel(e.categoryTag);
-  if (tag) meta.push(tag);
-
-  const lines = [
-    `${icon} <b>${score}/10</b> <a href="${link}">${title}</a>`,
-    `   ${meta.join(" · ")}`,
-  ];
-  if (e.tldr) lines.push(`   ${htmlEscape(e.tldr)}`);
-
-  return {
-    html: lines.join("\n"),
-    buttons: [{ text: `${icon} ${truncate(e.title, 40)}`, url: link }],
-  };
+/** "Tue, Jul 21 5 PM" / "Fri, Jul 24 10:30 AM" in the feed/region tz. */
+function fmtWhen(utc: Date, tz: string): string {
+  const d = DateTime.fromJSDate(utc, { zone: "utc" }).setZone(tz);
+  const date = d.toFormat("ccc, LLL d");
+  const time = d.minute === 0 ? d.toFormat("h a") : d.toFormat("h:mm a");
+  return `${date} ${time}`;
 }
 
-function header(kind: DigestKind, events: DeliveryEvent[], tz: string): string {
-  if (kind === "daily") {
-    return `☀️ <b>TLDR Events — Today &amp; Tomorrow</b>`;
+function eventBlock(e: DeliveryEvent, tz: string): string {
+  const title = htmlEscape(truncate(e.title, 90));
+  const link = e.url ? `<a href="${urlAttr(e.url)}">${title}</a>` : title;
+  const emoji = CAT_EMOJI[e.categoryTag ?? ""] ?? "";
+  const parts = [fmtWhen(e.startsAt, tz), `👥 ${e.guestCount ?? 0}`];
+  if (emoji) parts.push(emoji);
+  let block = `• ${link}\n${parts.join(" | ")}`;
+  if (e.speakerNames.length) {
+    block += `\n🎤 ${htmlEscape(e.speakerNames.slice(0, 3).join(", "))}`;
   }
-  const start = events.length ? fmtLocalDate(events[0].startsAt, tz) : "";
-  const end = events.length ? fmtLocalDate(events[events.length - 1].startsAt, tz) : "";
-  const range = start && end ? ` (${start} – ${end})` : "";
-  return `🗓️ <b>TLDR Events — The Week Ahead</b>${range}`;
+  return block;
 }
 
-export function quietWeek(): DigestChunk {
-  return {
-    html:
-      `🗓️ <b>TLDR Events — The Week Ahead</b>\n\n` +
-      `A quiet week — nothing cleared the bar this time. We only send events genuinely worth your evening, so no filler. Back with the next standout.`,
-    buttons: [],
-  };
+/** Compact one-message renderer shared by scheduled digests + the on-demand bot. */
+export function renderEventsMessage(header: string, events: DeliveryEvent[], tz: string): string {
+  const out: string[] = [header];
+  let len = header.length;
+  let shown = 0;
+
+  for (const tier of TIER_SEQUENCE) {
+    const evs = events
+      .filter((e) => e.tier === tier)
+      .sort((a, b) => b.score - a.score || a.startsAt.getTime() - b.startsAt.getTime());
+    if (evs.length === 0) continue;
+
+    let sectionOpen = false;
+    for (const e of evs) {
+      const block = eventBlock(e, tz);
+      const add = (sectionOpen ? 0 : SECTION[tier].length + 2) + block.length + 1;
+      if (len + add > MAX_CHARS) {
+        const remaining = events.length - shown;
+        out.push(`\n… +${remaining} more at ${siteUrl()}`);
+        return out.join("\n");
+      }
+      if (!sectionOpen) {
+        out.push(`\n${SECTION[tier]}`);
+        len += SECTION[tier].length + 2;
+        sectionOpen = true;
+      }
+      out.push(block);
+      len += block.length + 1;
+      shown++;
+    }
+  }
+  return out.join("\n");
 }
 
-export function renderDigestMessages(
+function digestHeader(feed: FeedRow, events: DeliveryEvent[], kind: DigestKind, tz: string): string {
+  const legend = "🤖 AI · 🧬 Longevity · 🔒 Web3 · 🌟 Founders";
+  const count = events.length;
+  if (kind === "daily") {
+    return `☀️ <b>Bay Area Events — Today &amp; Tomorrow</b>\n📊 ${count} curated events | ${legend}`;
+  }
+  let range = "";
+  if (events.length) {
+    const first = DateTime.fromJSDate(events[0].startsAt, { zone: "utc" }).setZone(tz);
+    const last = DateTime.fromJSDate(events[events.length - 1].startsAt, { zone: "utc" }).setZone(tz);
+    range =
+      first.month === last.month
+        ? ` — Week of ${first.toFormat("LLL d")}-${last.toFormat("d")}`
+        : ` — Week of ${first.toFormat("LLL d")}-${last.toFormat("LLL d")}`;
+  }
+  return `📅 <b>Bay Area Events${range}</b>\n📊 ${count} curated events | ${legend}`;
+}
+
+/** One message for a scheduled digest. Empty daily → "" (poster skips); empty weekly → quiet note. */
+export function renderDigestMessage(
   feed: FeedRow,
   events: DeliveryEvent[],
   kind: DigestKind,
   tz: string,
-): DigestChunk[] {
+): string {
   if (events.length === 0) {
-    return kind === "weekly" ? [quietWeek()] : [];
+    return kind === "weekly" ? quietWeekMessage() : "";
   }
-  return renderEventList(feed, events, header(kind, events, tz), tz);
+  // Sort by start time for the header range calc; sections re-sort by score.
+  const byDate = [...events].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  return renderEventsMessage(digestHeader(feed, byDate, kind, tz), events, tz);
 }
 
-/** Shared tier-grouped, chunked renderer for scheduled digests + on-demand bot. */
-export function renderEventList(
-  feed: FeedRow,
-  events: DeliveryEvent[],
-  headerText: string,
-  tz: string,
-): DigestChunk[] {
-  if (events.length === 0) return [];
-
-  // Tier groups, 🔥 first; within a tier, by start time.
-  const tiers: Tier[] = ["dont_miss", "strong", "radar"];
-  const grouped = new Map<Tier, DeliveryEvent[]>();
-  for (const e of events) {
-    const arr = grouped.get(e.tier) ?? [];
-    arr.push(e);
-    grouped.set(e.tier, arr);
-  }
-
-  const chunks: DigestChunk[] = [];
-  let curHtml = headerText;
-  let curButtons: InlineButton[] = [];
-
-  const flush = () => {
-    if (curHtml.trim()) chunks.push({ html: curHtml, buttons: curButtons });
-    curHtml = "";
-    curButtons = [];
-  };
-  const append = (piece: string, buttons: InlineButton[]) => {
-    const candidate = curHtml ? `${curHtml}\n\n${piece}` : piece;
-    if (candidate.length > MAX_CHARS && curHtml) {
-      flush();
-      curHtml = piece;
-      curButtons = [...buttons];
-    } else {
-      curHtml = candidate;
-      curButtons.push(...buttons);
-    }
-  };
-
-  for (const tier of tiers.sort((a, b) => TIER_ORDER[a] - TIER_ORDER[b])) {
-    const arr = (grouped.get(tier) ?? []).sort(
-      (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),
-    );
-    if (!arr.length) continue;
-    append(`${TIER_ICON[tier]} <b>${TIER_LABEL[tier]}</b>`, []);
-    for (const e of arr) {
-      const block = eventBlock(e, feed.id, tz);
-      append(block.html, block.buttons);
-    }
-  }
-  flush();
-  return chunks;
+export function quietWeekMessage(): string {
+  return (
+    `📅 <b>Bay Area Events — The Week Ahead</b>\n\n` +
+    `A quiet week — nothing cleared the bar this time. We only send events genuinely worth ` +
+    `your evening, so no filler. Back with the next standout.`
+  );
 }

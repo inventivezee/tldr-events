@@ -7,7 +7,7 @@ import type { FeedRow } from "@/db/schema";
 import { thisWeekWindow, nextWeekWindow, type UtcWindow } from "@/lib/time";
 import { DateTime } from "luxon";
 import { queryDeliveryEvents } from "@/digest/query";
-import { renderEventList } from "@/digest/render";
+import { renderEventsMessage } from "@/digest/render";
 import { sendMessage } from "./api";
 import { runDigestPoster } from "@/digest/poster";
 import { allowedChatIds } from "@/config/env";
@@ -102,10 +102,7 @@ async function respond(
     await sendMessage(chatId, `${headerText}\n\nNothing clears the bar right now — check back soon.`);
     return;
   }
-  const chunks = renderEventList(feed, events, headerText, tz);
-  for (const chunk of chunks) {
-    await sendMessage(chatId, chunk.html, chunk.buttons);
-  }
+  await sendMessage(chatId, renderEventsMessage(headerText, events, tz));
   log.info(`bot replied ${events.length} events to chat ${chatId}`);
 }
 

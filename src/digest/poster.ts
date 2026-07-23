@@ -8,7 +8,7 @@ import type { FeedRow } from "@/db/schema";
 import type { DigestKind, PostSchedule } from "@/types";
 import { dailyWindow, weeklyWindow, localHourAndDow, type UtcWindow } from "@/lib/time";
 import { queryDeliveryEvents } from "./query";
-import { renderDigestMessages } from "./render";
+import { renderDigestMessage } from "./render";
 import { sendMessage, telegramConfigured } from "@/telegram/api";
 import { logger } from "@/lib/logger";
 
@@ -130,31 +130,20 @@ async function postOne(
     return { feedId: feed.id, kind, posted: false, events: 0, messages: 0, status: "skipped", reason: "no events" };
   }
 
-  const chunks = renderDigestMessages(feed, events, kind, tz);
+  // ONE compact message per digest — no chunk splitting, no inline buttons.
+  const html = renderDigestMessage(feed, events, kind, tz);
   const messageIds: number[] = [];
   let migrated: string | undefined;
-  let failedMidway = false;
+  let status: "sent" | "failed" | "partial" = "sent";
 
-  for (const chunk of chunks) {
-    try {
-      const res = await sendMessage(channelId, chunk.html, chunk.buttons);
-      messageIds.push(res.messageId);
-      if (res.migratedChatId) migrated = String(res.migratedChatId);
-    } catch (e) {
-      log.error(`send failed for feed ${feed.id} (${kind})`, e);
-      failedMidway = true;
-      break;
-    }
+  try {
+    const res = await sendMessage(channelId, html);
+    messageIds.push(res.messageId);
+    if (res.migratedChatId) migrated = String(res.migratedChatId);
+  } catch (e) {
+    log.error(`send failed for feed ${feed.id} (${kind})`, e);
+    status = "failed";
   }
-
-  // 'sent' = all chunks delivered; 'partial' = some delivered then errored (must
-  // NOT be re-sent → dedup counts it as done); 'failed' = nothing delivered (safe
-  // to retry next run).
-  const status: "sent" | "failed" | "partial" = failedMidway
-    ? messageIds.length > 0
-      ? "partial"
-      : "failed"
-    : "sent";
 
   await db.insert(schema.digestPosts).values({
     feedId: feed.id,
