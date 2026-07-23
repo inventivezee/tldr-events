@@ -48,6 +48,14 @@ export async function createBrowserSession(): Promise<BrowserSession> {
   page.setDefaultTimeout(45000);
   page.setDefaultNavigationTimeout(45000);
 
+  // Bundlers (esbuild via tsx, and Next's SWC) inject `__name(fn, "name")` calls
+  // into the function bodies we pass to page.evaluate(); that helper is undefined
+  // in the browser and throws "__name is not defined". Define a no-op shim before
+  // any page script runs. Passed as a STRING so the bundler can't instrument it.
+  await context.addInitScript(
+    "globalThis.__name = globalThis.__name || function (f) { return f; };",
+  );
+
   let lastNav = 0;
   const goto: BrowserSession["goto"] = async (url, opts) => {
     const since = Date.now() - lastNav;

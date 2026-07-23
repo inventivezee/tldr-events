@@ -67,6 +67,19 @@ async function checkTelegram(): Promise<string[]> {
     out.push(line("Telegram", false, `getMe: ${msg(e)}`));
     return out;
   }
+  // If a target chat (channel/group) is configured, confirm the bot can see it.
+  const target = process.env.TELEGRAM_CHANNEL_ID;
+  if (target) {
+    try {
+      const chat = await tg(token, "getChat", { chat_id: target });
+      const name = chat.title || chat.username || chat.first_name || target;
+      out.push(line("Telegram target", true, `${chat.type} "${name}" (${target}) reachable`));
+    } catch (e) {
+      out.push(
+        line("Telegram target", false, `${target}: ${msg(e)} — add the bot to the chat as admin`),
+      );
+    }
+  }
   // List recent chats (works only when no webhook is set — fine pre-deploy).
   try {
     const updates: any[] = await tg(token, "getUpdates");
@@ -90,8 +103,9 @@ async function checkTelegram(): Promise<string[]> {
   return out;
 }
 
-async function tg(token: string, method: string): Promise<any> {
-  const res = await fetch(`https://api.telegram.org/bot${token}/${method}`);
+async function tg(token: string, method: string, params?: Record<string, string>): Promise<any> {
+  const qs = params ? "?" + new URLSearchParams(params).toString() : "";
+  const res = await fetch(`https://api.telegram.org/bot${token}/${method}${qs}`);
   const json = (await res.json()) as { ok: boolean; result?: any; description?: string };
   if (!json.ok) throw new Error(json.description || `${method} failed`);
   return json.result;
