@@ -7,6 +7,7 @@
 import "./_env";
 import { sqlClient } from "../src/db/client";
 import { runIngestion } from "../src/ingestion/runner";
+import { runLumaBackfill } from "../src/ingestion/luma-backfill";
 import { runDedup } from "../src/dedup/canonicalize";
 import { runResearch } from "../src/research/speakers";
 import { runScorer } from "../src/scoring/scorer";
@@ -26,6 +27,8 @@ async function main() {
     console.log(JSON.stringify(await runIngestion(), null, 2));
   }
   if (has("dedup")) {
+    console.log("\n=== LUMA BACKFILL ===");
+    console.log(JSON.stringify(await runLumaBackfill(), null, 2));
     console.log("\n=== DEDUP ===");
     console.log(JSON.stringify(await runDedup(), null, 2));
   }

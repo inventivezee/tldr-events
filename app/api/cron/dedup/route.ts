@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cronAuthorized } from "@/cron/guard";
 import { withJobLock, LOCK, LOCK_TTL } from "@/db/client";
 import { runDedup } from "@/dedup/canonicalize";
+import { runLumaBackfill } from "@/ingestion/luma-backfill";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,12 @@ export const maxDuration = 300;
 
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ ok: false }, { status: 401 });
-  const r = await withJobLock(LOCK.dedup, LOCK_TTL.dedup, () => runDedup());
+  const r = await withJobLock(LOCK.dedup, LOCK_TTL.dedup, async () => {
+    // Enrich cross-source lu.ma links (attendance + hosts) BEFORE dedup, so the
+    // canonical primary and the scorer both see the real numbers.
+    const backfill = await runLumaBackfill();
+    const dedup = await runDedup();
+    return { backfill, dedup };
+  });
   return NextResponse.json(r.ran ? { ok: true, ...r.result } : { ok: true, skipped: "locked" });
 }

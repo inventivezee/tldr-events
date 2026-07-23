@@ -2,28 +2,22 @@
 // `luma_discover` (place) and `luma_calendar` (calendar) sources. Luma times are
 // UTC. Internal endpoints can drift (§9.3): we validate response shape, retain
 // raw, and fail per-source. Base host is overridable via LUMA_API_BASE.
-import type { NormalizedEvent, PersonRef } from "@/types";
+import type { NormalizedEvent } from "@/types";
 import type { SourceRow } from "@/db/schema";
 import type { FetchFn } from "../types";
 import { parseToUtc } from "@/lib/time";
 import { categorize } from "../categorize";
 import { logger } from "@/lib/logger";
+import {
+  BASE,
+  getJson,
+  personRefs,
+  fetchLumaDetail,
+  pool,
+} from "../luma-detail";
 
 const log = logger("adapter:luma");
-const BASE = process.env.LUMA_API_BASE || "https://api.lu.ma";
 const MAX_PAGES = 6;
-
-async function getJson(url: string): Promise<any> {
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    },
-  });
-  if (!res.ok) throw new Error(`Luma ${res.status} for ${url}`);
-  return res.json();
-}
 
 /** Pull the event-bearing rows from a paginated response, tolerant of shape drift. */
 function extractEntries(payload: any): any[] {
@@ -33,74 +27,6 @@ function extractEntries(payload: any): any[] {
   if (Array.isArray(payload.items)) return payload.items;
   if (Array.isArray(payload.data)) return payload.data;
   return [];
-}
-
-function personRefs(list: any): PersonRef[] {
-  if (!Array.isArray(list)) return [];
-  const out: PersonRef[] = [];
-  for (const p of list) {
-    if (!p) continue;
-    const name = String(
-      p.name ||
-        p.display_name ||
-        p.full_name ||
-        [p.first_name, p.last_name].filter(Boolean).join(" "),
-    ).trim();
-    if (!name) continue;
-    out.push({ name, bio: p.bio || p.bio_short || p.headline || p.about || null });
-  }
-  return out;
-}
-
-/** Real attendance from a Luma DETAIL payload. `guest_count` is 0 when the host
- *  hides the guest list, but num_guests / num_tickets_registered still carry it —
- *  take the max integer across those keys (per-tier values are ≤ the total). */
-function collectMaxCount(obj: any): number | null {
-  const KEYS = new Set(["guest_count", "num_guests", "num_tickets_registered"]);
-  let max = 0;
-  let found = false;
-  const walk = (o: any, d: number) => {
-    if (!o || d > 4 || typeof o !== "object") return;
-    for (const k of Object.keys(o)) {
-      const v = o[k];
-      if (KEYS.has(k) && typeof v === "number" && Number.isFinite(v)) {
-        found = true;
-        if (v > max) max = v;
-      } else if (v && typeof v === "object") {
-        walk(v, d + 1);
-      }
-    }
-  };
-  walk(obj, 0);
-  return found ? max : null;
-}
-
-/** Fetch a single event's detail (attendance + real hosts/featured guests). */
-async function fetchLumaDetail(
-  apiId: string,
-): Promise<{ guestCount: number | null; hosts: PersonRef[]; speakers: PersonRef[] } | null> {
-  try {
-    const d = await getJson(`${BASE}/event/get?event_api_id=${encodeURIComponent(apiId)}`);
-    return {
-      guestCount: collectMaxCount(d),
-      hosts: personRefs(d.hosts),
-      speakers: personRefs(d.featured_guests),
-    };
-  } catch {
-    return null; // fail-soft: keep list data for this event
-  }
-}
-
-/** Run `fn` over items with bounded concurrency. */
-async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
-  let i = 0;
-  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++;
-      await fn(items[idx]);
-    }
-  });
-  await Promise.all(workers);
 }
 
 export function parseLumaEntry(source: SourceRow, entry: any): NormalizedEvent | null {
