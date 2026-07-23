@@ -107,6 +107,10 @@ export const SEED_SOURCES: SeedSource[] = [
   },
 ];
 
+// Supplementary sources split into their own cron slot so the slower/long-tail
+// scrapes (Partiful, Google) don't get starved by the core sources' time budget.
+export const EXTRA_SOURCE_IDS = ["partiful_sf", "google_sf"];
+
 export const FEED_ID = "bay_founder";
 
 export const SEED_FEED = {

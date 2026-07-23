@@ -21,7 +21,8 @@
     "pipeline": "tsx scripts/run-pipeline.ts",
     "tg:set-webhook": "tsx scripts/set-webhook.ts",
     "eval": "tsx scripts/run-eval.ts",
-    "doctor": "tsx scripts/doctor.ts"
+    "doctor": "tsx scripts/doctor.ts",
+    "top": "tsx scripts/top.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",

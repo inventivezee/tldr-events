@@ -2,7 +2,7 @@
 // and upserts into `events` keyed by (source_id, source_event_id). Failure is
 // isolated per source (§8 "fail partial, never total"). One browser session is
 // shared across all browser sources + speaker research.
-import { and, asc, eq } from "drizzle-orm";
+import { asc, eq, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import type { SourceRow } from "@/db/schema";
 import type { NormalizedEvent } from "@/types";
@@ -25,7 +25,6 @@ export interface SourceResult {
   ok: boolean;
   count: number;
   upserted: number;
-  changed: number;
   error?: string;
 }
 
@@ -36,13 +35,14 @@ export interface IngestSummary {
 
 export async function runIngestion(opts?: {
   sourceIds?: string[];
+  excludeSourceIds?: string[];
   budgetMs?: number;
 }): Promise<IngestSummary> {
   const db = getDb();
   const now = new Date();
   // Stop starting new sources past this soft deadline so the finally-block can
   // close the browser session before Vercel's maxDuration hard-kill.
-  const deadline = Date.now() + (opts?.budgetMs ?? 240000);
+  const deadline = Date.now() + (opts?.budgetMs ?? 270000);
 
   // Order by priority asc → the fast Luma backbone (priority 10–20) runs before
   // the slower browser scrapes, so a run that hits the function time limit still
@@ -53,9 +53,12 @@ export async function runIngestion(opts?: {
     .where(eq(schema.sources.enabled, true))
     .orderBy(asc(schema.sources.priority));
 
-  const sources = opts?.sourceIds
+  let sources = opts?.sourceIds
     ? allSources.filter((s) => opts.sourceIds!.includes(s.id))
     : allSources;
+  if (opts?.excludeSourceIds?.length) {
+    sources = sources.filter((s) => !opts.excludeSourceIds!.includes(s.id));
+  }
 
   const anyBrowser = sources.some(needsBrowser);
   let session: BrowserSession | undefined;
@@ -83,7 +86,6 @@ export async function runIngestion(opts?: {
           ok: false,
           count: 0,
           upserted: 0,
-          changed: 0,
           error: "skipped: time budget reached",
         });
         continue;
@@ -94,7 +96,6 @@ export async function runIngestion(opts?: {
           ok: false,
           count: 0,
           upserted: 0,
-          changed: 0,
           error: "browser session unavailable",
         });
         continue;
@@ -106,20 +107,18 @@ export async function runIngestion(opts?: {
           ok: false,
           count: 0,
           upserted: 0,
-          changed: 0,
           error: `no adapter for kind=${source.kind} id=${source.id}`,
         });
         continue;
       }
       try {
         const events = await adapter(source, ctx);
-        const { upserted, changed } = await upsertEvents(source, events);
+        const upserted = await upsertEvents(source, events);
         results.push({
           sourceId: source.id,
           ok: true,
           count: events.length,
           upserted,
-          changed,
         });
       } catch (e) {
         log.error(`source ${source.id} failed`, e);
@@ -128,7 +127,6 @@ export async function runIngestion(opts?: {
           ok: false,
           count: 0,
           upserted: 0,
-          changed: 0,
           error: e instanceof Error ? e.message : String(e),
         });
       }
@@ -145,86 +143,75 @@ export async function runIngestion(opts?: {
 async function upsertEvents(
   source: SourceRow,
   events: NormalizedEvent[],
-): Promise<{ upserted: number; changed: number }> {
+): Promise<number> {
+  if (events.length === 0) return 0;
   const db = getDb();
+
+  const rows = events.map((e) => ({
+    sourceId: source.id,
+    sourceEventId: e.source_event_id,
+    title: e.title,
+    titleNormalized: normalizeText(e.title),
+    description: e.description ?? null,
+    url: e.url ?? null,
+    status: e.status,
+    startsAt: e.starts_at,
+    endsAt: e.ends_at ?? null,
+    regionId: e.region_id,
+    venueName: e.venue_name ?? null,
+    venueNormalized: normalizeVenue(e.venue_name),
+    address: e.address ?? null,
+    city: e.city ?? null,
+    lat: e.lat ?? null,
+    lng: e.lng ?? null,
+    hosts: e.hosts ?? [],
+    speakers: e.speakers ?? [],
+    guestCount: e.guest_count ?? null,
+    categories: e.categories ?? [],
+    contentHash: contentHashForNormalized(e),
+    raw: e.raw ?? null,
+    lastSeenAt: new Date(),
+  }));
+
+  // Batch upsert (one statement per chunk) using excluded.* — updates only
+  // source-derived columns, leaving canonical_group / is_primary (owned by dedup)
+  // and first_seen_at untouched.
+  const setClause = {
+    title: sql`excluded.title`,
+    titleNormalized: sql`excluded.title_normalized`,
+    description: sql`excluded.description`,
+    url: sql`excluded.url`,
+    status: sql`excluded.status`,
+    startsAt: sql`excluded.starts_at`,
+    endsAt: sql`excluded.ends_at`,
+    regionId: sql`excluded.region_id`,
+    venueName: sql`excluded.venue_name`,
+    venueNormalized: sql`excluded.venue_normalized`,
+    address: sql`excluded.address`,
+    city: sql`excluded.city`,
+    lat: sql`excluded.lat`,
+    lng: sql`excluded.lng`,
+    hosts: sql`excluded.hosts`,
+    speakers: sql`excluded.speakers`,
+    guestCount: sql`excluded.guest_count`,
+    categories: sql`excluded.categories`,
+    contentHash: sql`excluded.content_hash`,
+    raw: sql`excluded.raw`,
+    lastSeenAt: sql`excluded.last_seen_at`,
+  };
+
+  const CHUNK = 100;
   let upserted = 0;
-  let changed = 0;
-
-  for (const e of events) {
-    const contentHash = contentHashForNormalized(e);
-    const values = {
-      sourceId: source.id,
-      sourceEventId: e.source_event_id,
-      title: e.title,
-      titleNormalized: normalizeText(e.title),
-      description: e.description ?? null,
-      url: e.url ?? null,
-      status: e.status,
-      startsAt: e.starts_at,
-      endsAt: e.ends_at ?? null,
-      regionId: e.region_id,
-      venueName: e.venue_name ?? null,
-      venueNormalized: normalizeVenue(e.venue_name),
-      address: e.address ?? null,
-      city: e.city ?? null,
-      lat: e.lat ?? null,
-      lng: e.lng ?? null,
-      hosts: e.hosts ?? [],
-      speakers: e.speakers ?? [],
-      guestCount: e.guest_count ?? null,
-      categories: e.categories ?? [],
-      contentHash,
-      raw: e.raw ?? null,
-      lastSeenAt: new Date(),
-    };
-
-    // Detect a content change so we can report re-score churn.
-    const [existing] = await db
-      .select({ contentHash: schema.events.contentHash })
-      .from(schema.events)
-      .where(
-        and(
-          eq(schema.events.sourceId, source.id),
-          eq(schema.events.sourceEventId, e.source_event_id),
-        ),
-      )
-      .limit(1);
-
-    if (!existing || existing.contentHash !== contentHash) changed++;
-
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
     await db
       .insert(schema.events)
-      .values(values)
+      .values(slice)
       .onConflictDoUpdate({
         target: [schema.events.sourceId, schema.events.sourceEventId],
-        // Update source-derived fields only; leave canonical_group / is_primary
-        // (owned by dedup) and first_seen_at untouched.
-        set: {
-          title: values.title,
-          titleNormalized: values.titleNormalized,
-          description: values.description,
-          url: values.url,
-          status: values.status,
-          startsAt: values.startsAt,
-          endsAt: values.endsAt,
-          regionId: values.regionId,
-          venueName: values.venueName,
-          venueNormalized: values.venueNormalized,
-          address: values.address,
-          city: values.city,
-          lat: values.lat,
-          lng: values.lng,
-          hosts: values.hosts,
-          speakers: values.speakers,
-          guestCount: values.guestCount,
-          categories: values.categories,
-          contentHash: values.contentHash,
-          raw: values.raw,
-          lastSeenAt: values.lastSeenAt,
-        },
+        set: setClause,
       });
-    upserted++;
+    upserted += slice.length;
   }
-
-  return { upserted, changed };
+  return upserted;
 }
