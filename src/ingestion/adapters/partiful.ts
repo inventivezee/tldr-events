@@ -78,9 +78,11 @@ function numOr0(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Partiful start may be an ISO string or a {seconds}/{_seconds} timestamp. */
+/** Partiful start may be an ISO string, a Date (Playwright deserializes it), a
+ *  number (epoch ms), or a {seconds}/{_seconds} Firestore-style timestamp. */
 function normalizeStart(v: any): string | null {
   if (!v) return null;
+  if (v instanceof Date) return v.toISOString();
   if (typeof v === "string") return v;
   if (typeof v === "number") return new Date(v).toISOString();
   const secs = v.seconds ?? v._seconds;

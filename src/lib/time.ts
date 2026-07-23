@@ -9,7 +9,10 @@ const DEFAULT_TZ = "America/Los_Angeles";
  * - ISO strings with an offset/Z are honored as-is.
  * - Naive strings (no offset) are localized to `sourceTz` first, then converted.
  */
-export function parseToUtc(input: string, sourceTz?: string): Date {
+export function parseToUtc(input: string | number | Date, sourceTz?: string): Date {
+  // Playwright's page.evaluate can hand back real Date objects; numbers are epoch ms.
+  if (input instanceof Date) return new Date(input.getTime());
+  if (typeof input === "number") return new Date(input);
   const tz = sourceTz || DEFAULT_TZ;
   // Try ISO first (handles trailing Z and explicit offsets).
   let dt = DateTime.fromISO(input, { setZone: true });
