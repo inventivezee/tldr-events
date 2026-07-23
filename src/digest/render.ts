@@ -11,6 +11,9 @@ import { siteUrl } from "@/lib/links";
 
 const MAX_CHARS = 3950; // safety margin under Telegram's 4096
 
+/** Category legend shown in every digest header (scheduled + on-demand bot). */
+export const DIGEST_LEGEND = "🤖 AI · 🧬 Longevity · 🔒 Web3 · 🌟 Founders · 🛠️ Hackathon";
+
 const CAT_EMOJI: Record<string, string> = {
   ai: "🤖",
   longevity: "🧬",
@@ -31,7 +34,14 @@ function truncate(s: string, n: number): string {
 }
 
 function urlAttr(u: string): string {
-  return u.replace(/&/g, "&amp;").replace(/"/g, "%22");
+  // Escape for an HTML href attribute. Angle brackets MUST be encoded too — a raw
+  // < or > anywhere in the URL breaks Telegram's HTML parser and fails the whole
+  // sendMessage, not just this one link.
+  return u
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "%22")
+    .replace(/</g, "%3C")
+    .replace(/>/g, "%3E");
 }
 
 /** "Tue, Jul 21 5 PM" / "Fri, Jul 24 10:30 AM" in the feed/region tz. */
@@ -46,9 +56,12 @@ function eventBlock(e: DeliveryEvent, tz: string): string {
   const title = htmlEscape(truncate(e.title, 90));
   const link = e.url ? `<a href="${urlAttr(e.url)}">${title}</a>` : title;
   const emoji = CAT_EMOJI[e.categoryTag ?? ""] ?? "";
-  const parts = [fmtWhen(e.startsAt, tz), `👥 ${e.guestCount ?? 0}`];
+  const parts = [fmtWhen(e.startsAt, tz)];
+  // Only show attendance when we actually have it — a null/0 count is "unknown",
+  // not "zero people", and a fabricated "👥 0" reads as a dead event.
+  if (e.guestCount != null && e.guestCount > 0) parts.push(`👥 ${e.guestCount}`);
   if (emoji) parts.push(emoji);
-  let block = `• ${link}\n${parts.join(" | ")}`;
+  let block = `• ${link}\n${parts.join(" · ")}`;
   if (e.speakerNames.length) {
     block += `\n🎤 ${htmlEscape(e.speakerNames.slice(0, 3).join(", "))}`;
   }
@@ -90,7 +103,7 @@ export function renderEventsMessage(header: string, events: DeliveryEvent[], tz:
 }
 
 function digestHeader(feed: FeedRow, events: DeliveryEvent[], kind: DigestKind, tz: string): string {
-  const legend = "🤖 AI · 🧬 Longevity · 🔒 Web3 · 🌟 Founders";
+  const legend = DIGEST_LEGEND;
   const count = events.length;
   if (kind === "daily") {
     return `☀️ <b>Bay Area Events — Today &amp; Tomorrow</b>\n📊 ${count} curated events | ${legend}`;

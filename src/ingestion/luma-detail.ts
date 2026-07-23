@@ -14,6 +14,8 @@ export async function getJson(url: string): Promise<any> {
       "user-agent":
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
     },
+    // Bound each request so a stalled connection can't eat the cron time budget.
+    signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) throw new Error(`Luma ${res.status} for ${url}`);
   return res.json();

@@ -35,6 +35,30 @@ export interface DeliveryEvent {
 
 const NOTABLE_MIN_PROMINENCE = 6;
 
+const ROLE_WORDS =
+  /\b(co-?founders?|founders?|ceo|cto|coo|cfo|cmo|gp|lp|vc|partner|head|director|lead|engineer|investor|president|chair(?:man|woman|person)?|organiz(?:er|ers)|host|manager|principal|advisor|angel|operator|scientist|researcher|of)\b/i;
+
+/** Tidy a raw host/speaker name for display: drop a trailing role/affiliation
+ *  clause ("Vanessa Larco - Co-founder at Premise" → "Vanessa Larco"; "Mercedes
+ *  Bent, Cofounder Premise" → "Mercedes Bent"; "Emily, Workato" → "Emily") and
+ *  strip stray trailing punctuation ("tokens&" → "tokens"). Leaves genuine
+ *  hyphenated names intact (no spaces around the hyphen: "Rizel Bobb-Semple"). */
+function cleanName(raw: string): string {
+  let s = raw.trim();
+  const m = s.match(/^(.{2,}?)(?:\s[-–—]\s|,\s|\s\()(.*)$/);
+  if (m) {
+    const [, head, tailRaw] = m;
+    const tail = tailRaw.replace(/\)$/, "").trim();
+    const tailWords = tail.split(/\s+/).filter(Boolean);
+    // Drop the tail when it reads like a role/affiliation, contains " at ", or is
+    // a short (≤2-word) trailing org/handle — the common Luma "Name, Org" shape.
+    if (ROLE_WORDS.test(tail) || /\bat\b/i.test(tail) || tailWords.length <= 2) {
+      s = head.trim();
+    }
+  }
+  return s.replace(/[\s,&\-–—]+$/, "").trim();
+}
+
 export async function queryDeliveryEvents(params: {
   feedId: string;
   regionId: string;
@@ -121,14 +145,15 @@ export async function queryDeliveryEvents(params: {
     }
     notable.sort((a, b) => (b.prominence ?? 0) - (a.prominence ?? 0));
 
-    // Raw host/speaker display names (deduped) for the digest's 🎤 line.
+    // Cleaned host/speaker display names (deduped) for the digest's 🎤 line.
     const speakerNames: string[] = [];
     const nameSeen = new Set<string>();
     for (const ref of refs) {
       const key = normalizeName(ref.name);
       if (!key || nameSeen.has(key)) continue;
       nameSeen.add(key);
-      if (ref.name?.trim()) speakerNames.push(ref.name.trim());
+      const display = cleanName(ref.name ?? "");
+      if (display) speakerNames.push(display);
     }
 
     return {

@@ -2,7 +2,7 @@
 // Living, versioned, curator-owned, evaluated against the labeled set (see eval/).
 // Bump RUBRIC_VERSION on any change so incremental scoring re-scores against it.
 
-export const RUBRIC_VERSION = 4;
+export const RUBRIC_VERSION = 5;
 
 export const BAY_FOUNDER_RUBRIC_V1 = `You are the editorial curator for **TLDR Events — Bay Area, Founders & Investors**.
 

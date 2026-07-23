@@ -202,6 +202,11 @@ export async function runDedup(opts?: {
     components.set(root, arr);
   }
 
+  // Build the full write set first, then apply with bounded concurrency. The
+  // previous sequential per-row await took >120s for ~500 rows over the pooler;
+  // this cron now also runs the Luma backfill before dedup within the same 300s
+  // budget, so pipelining the writes keeps it well clear of the timeout.
+  const writes: Array<() => Promise<void>> = [];
   let primaries = 0;
   for (const members of components.values()) {
     // Primary = lowest priority (most authoritative); tie-break longest desc,
@@ -217,42 +222,60 @@ export async function runDedup(opts?: {
     const enriched = enrichPrimary(primary, members);
 
     for (const m of members) {
-      const isPrimary = m.id === primary.id;
-      if (isPrimary) {
-        await db
-          .update(schema.events)
-          .set({
-            canonicalKey: m.canonicalKey,
-            canonicalGroup: groupId,
-            isPrimary: true,
-            description: enriched.description,
-            guestCount: enriched.guestCount,
-            speakers: enriched.speakers,
-            hosts: enriched.hosts,
-            venueName: enriched.venueName,
-            address: enriched.address,
-            city: enriched.city,
-            lat: enriched.lat,
-            lng: enriched.lng,
-            status: enriched.status,
-            // NOTE: content_hash is intentionally NOT written here. It is owned
-            // solely by ingestion (derived from the source row), so it stays a
-            // stable incremental-scoring key and isn't churned by re-enrichment.
-          })
-          .where(inArray(schema.events.id, [m.id]));
+      const id = m.id;
+      if (id === primary.id) {
         primaries++;
+        writes.push(() =>
+          db
+            .update(schema.events)
+            .set({
+              canonicalKey: m.canonicalKey,
+              canonicalGroup: groupId,
+              isPrimary: true,
+              description: enriched.description,
+              guestCount: enriched.guestCount,
+              speakers: enriched.speakers,
+              hosts: enriched.hosts,
+              venueName: enriched.venueName,
+              address: enriched.address,
+              city: enriched.city,
+              lat: enriched.lat,
+              lng: enriched.lng,
+              status: enriched.status,
+              // NOTE: content_hash is intentionally NOT written here. It is owned
+              // solely by ingestion (derived from the source row), so it stays a
+              // stable incremental-scoring key and isn't churned by re-enrichment.
+            })
+            .where(inArray(schema.events.id, [id]))
+            .then(() => undefined),
+        );
       } else {
-        await db
-          .update(schema.events)
-          .set({
-            canonicalKey: m.canonicalKey,
-            canonicalGroup: groupId,
-            isPrimary: false,
-          })
-          .where(inArray(schema.events.id, [m.id]));
+        writes.push(() =>
+          db
+            .update(schema.events)
+            .set({
+              canonicalKey: m.canonicalKey,
+              canonicalGroup: groupId,
+              isPrimary: false,
+            })
+            .where(inArray(schema.events.id, [id]))
+            .then(() => undefined),
+        );
       }
     }
   }
+
+  // Bounded-concurrency writer: independent single-row updates, order-agnostic.
+  const CONCURRENCY = 8;
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, writes.length) }, async () => {
+      while (next < writes.length) {
+        const idx = next++;
+        await writes[idx]();
+      }
+    }),
+  );
 
   log.info(
     `dedup: ${rows.length} events → ${components.size} groups (${primaries} primaries)`,

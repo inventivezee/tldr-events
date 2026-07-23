@@ -134,15 +134,25 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
 
   resetUsage();
   let scored = 0;
-  for (const e of work) {
-    try {
-      const result = await scoreEvent(feed, e, tz);
-      await writeScore(feed, e, result);
-      scored++;
-    } catch (err) {
-      log.warn(`score failed for event ${e.id} (${e.title})`, err);
-    }
-  }
+  // Score with bounded concurrency — the editorial calls are independent, so a
+  // small pool cuts wall-clock (a full re-score of a 300+ event window) without
+  // risking API rate limits. Each event's write follows its own score.
+  const CONCURRENCY = Number(process.env.SCORE_CONCURRENCY ?? 4);
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, work.length) }, async () => {
+      while (next < work.length) {
+        const e = work[next++];
+        try {
+          const result = await scoreEvent(feed, e, tz);
+          await writeScore(feed, e, result);
+          scored++;
+        } catch (err) {
+          log.warn(`score failed for event ${e.id} (${e.title})`, err);
+        }
+      }
+    }),
+  );
 
   const tok = usage();
   log.info(
@@ -270,11 +280,13 @@ function buildPromptFromInput(input: ScoringInput): string {
     for (const s of speakers) lines.push(describe(s));
   }
   if (!hosts.length && !speakers.length) {
-    lines.push("NAMED PEOPLE: none surfaced (the room is unknown — weigh accordingly).");
+    lines.push(
+      "NAMED PEOPLE: none surfaced — this is normal and common. Judge the event on its relevance, format, topic, host reputation and scale; do NOT lower the score just because the room is unknown.",
+    );
   }
 
   lines.push(
-    "\nScore this event's QUALITY for the feed's founder/investor audience using the rubric. Weigh WHO IS IN THE ROOM as heavily as the topic.",
+    "\nScore this event's QUALITY for the feed's founder/investor audience using the rubric. The score is driven by relevance, format, topic importance and apparent quality/scale/host. Treat any named or researched people as a modest BONUS that can lift a good event — but an unknown room must NEVER cap or lower the score.",
   );
   return lines.join("\n");
 }

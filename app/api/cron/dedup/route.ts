@@ -12,8 +12,14 @@ export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ ok: false }, { status: 401 });
   const r = await withJobLock(LOCK.dedup, LOCK_TTL.dedup, async () => {
     // Enrich cross-source lu.ma links (attendance + hosts) BEFORE dedup, so the
-    // canonical primary and the scorer both see the real numbers.
-    const backfill = await runLumaBackfill();
+    // canonical primary and the scorer both see the real numbers. Fail-soft: a
+    // backfill error must never abort the dedup pass.
+    let backfill: unknown = { skipped: "error" };
+    try {
+      backfill = await runLumaBackfill();
+    } catch (e) {
+      backfill = { error: e instanceof Error ? e.message : String(e) };
+    }
     const dedup = await runDedup();
     return { backfill, dedup };
   });

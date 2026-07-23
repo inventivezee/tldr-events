@@ -7,7 +7,7 @@ import type { FeedRow } from "@/db/schema";
 import { thisWeekWindow, nextWeekWindow, type UtcWindow } from "@/lib/time";
 import { DateTime } from "luxon";
 import { queryDeliveryEvents } from "@/digest/query";
-import { renderEventsMessage } from "@/digest/render";
+import { renderEventsMessage, DIGEST_LEGEND } from "@/digest/render";
 import { sendMessage } from "./api";
 import { runDigestPoster } from "@/digest/poster";
 import { allowedChatIds } from "@/config/env";
@@ -91,18 +91,21 @@ async function respond(
   window: UtcWindow,
   headerText: string,
 ): Promise<void> {
-  const events = await queryDeliveryEvents({
+  const all = await queryDeliveryEvents({
     feedId: feed.id,
     regionId: feed.regionId ?? "sf_bay",
     minScore: 0,
     relevantOnly: true,
     window,
   });
+  // Curated (TLDR) floor: events at/below 4.0 live only in the web "All" view.
+  const events = all.filter((e) => e.score > 4.0);
   if (events.length === 0) {
     await sendMessage(chatId, `${headerText}\n\nNothing clears the bar right now — check back soon.`);
     return;
   }
-  await sendMessage(chatId, renderEventsMessage(headerText, events, tz));
+  const header = `${headerText}\n📊 ${events.length} curated events | ${DIGEST_LEGEND}`;
+  await sendMessage(chatId, renderEventsMessage(header, events, tz));
   log.info(`bot replied ${events.length} events to chat ${chatId}`);
 }
 

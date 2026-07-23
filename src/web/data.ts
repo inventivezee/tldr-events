@@ -27,8 +27,8 @@ export const RANGE_META: Record<
 > = {
   today: { heading: "Today", blurb: "Today's picks, ranked.", path: "/today", nav: "Today" },
   tomorrow: { heading: "Tomorrow", blurb: "Tomorrow's picks, ranked.", path: "/tomorrow", nav: "Tomorrow" },
-  "this-week": { heading: "This Week", blurb: "The next 7 days, ranked.", path: "/", nav: "This Week" },
-  "next-week": { heading: "Next Week", blurb: "The following 7 days, ranked.", path: "/next-week", nav: "Next Week" },
+  "this-week": { heading: "This Week", blurb: "Through Sunday, ranked.", path: "/", nav: "This Week" },
+  "next-week": { heading: "Next Week", blurb: "Next Mon–Sun, ranked.", path: "/next-week", nav: "Next Week" },
 };
 
 export interface FeedMeta {

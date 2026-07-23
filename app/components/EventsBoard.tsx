@@ -63,9 +63,11 @@ export function EventsBoard({
 
   const zoneLabel = zoneLabelOf(displayTz);
 
-  // TLDR = industry-relevant only; All = everything (incl. non-relevant noise).
+  // TLDR = industry-relevant AND scoring above 4.0 (events at/below 4.0 drop out
+  // of the curated feed and live only in All). All = everything (incl. non-relevant
+  // noise and the sub-4.0 tail).
   const inMode = useMemo(
-    () => (mode === "tldr" ? events.filter((e) => e.relevant) : events),
+    () => (mode === "tldr" ? events.filter((e) => e.relevant && e.score > 4.0) : events),
     [events, mode],
   );
 

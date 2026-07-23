@@ -5,7 +5,7 @@ import type { Category } from "@/types";
 const RULES: Array<{ cat: Category; re: RegExp }> = [
   {
     cat: "ai",
-    re: /\b(ai|a\.i\.|artificial intelligence|machine learning|ml|llm|gpt|genai|gen ai|generative|agent(s|ic)?|neural|deep learning|inference|foundation model)\b/i,
+    re: /\b(ai|a\.i\.|artificial intelligence|machine learning|ml|llms?|gpt|genai|gen ai|generative|agent(s|ic)?|neural|deep learning|inference|foundation model|openai|anthropic|deepmind)\b/i,
   },
   {
     cat: "longevity",
@@ -21,7 +21,7 @@ const RULES: Array<{ cat: Category; re: RegExp }> = [
   },
   {
     cat: "founder_investor",
-    re: /\b(founder|co-?founder|investor|venture|vc\b|angel|demo day|pitch|startup|seed|pre-seed|series [a-c]|lp\b|gp\b|limited partner|fund|accelerator|incubator|operator)\b/i,
+    re: /\b(founders?|co-?founders?|investors?|ventures?|vc\b|angel|demo day|pitch|startups?|seed|pre-seed|series [a-c]|lp\b|gp\b|limited partner|fund|accelerator|incubator|operators?)\b/i,
   },
 ];
 
