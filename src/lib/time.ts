@@ -122,6 +122,24 @@ export function weeklyWindow(now: Date, tz: string): UtcWindow {
   return { start: start.toUTC().toJSDate(), end: end.toUTC().toJSDate() };
 }
 
+/** A single local calendar day at `offsetDays` from today (0=today, 1=tomorrow). */
+export function dayWindow(now: Date, tz: string, offsetDays = 0): UtcWindow {
+  const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz).plus({ days: offsetDays });
+  return {
+    start: local.startOf("day").toUTC().toJSDate(),
+    end: local.endOf("day").toUTC().toJSDate(),
+  };
+}
+
+/** Next week: +7 .. +13 local days (contiguous with, not overlapping, this week). */
+export function nextWeekWindow(now: Date, tz: string): UtcWindow {
+  const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz);
+  return {
+    start: local.plus({ days: 7 }).startOf("day").toUTC().toJSDate(),
+    end: local.plus({ days: 13 }).endOf("day").toUTC().toJSDate(),
+  };
+}
+
 /** Forward scoring window: now → +N local days (candidate set for scoring). */
 export function forwardWindow(now: Date, tz: string, days = 21): UtcWindow {
   const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz);

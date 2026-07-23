@@ -11,7 +11,17 @@ export function clickUrl(
   feedId: string,
   surface: "telegram" | "web",
 ): string {
-  // Target is resolved from the DB in /api/click (never from the query string),
-  // so we only pass identifiers here.
-  return `${siteUrl()}/api/click?e=${encodeURIComponent(eventId)}&f=${encodeURIComponent(feedId)}&s=${surface}`;
+  // Absolute URL — needed for Telegram (external context). Target is resolved
+  // from the DB in /api/click (never from the query string).
+  return `${siteUrl()}${clickPath(eventId, feedId, surface)}`;
+}
+
+/** Relative click path for the website — works on any domain without depending
+ *  on NEXT_PUBLIC_SITE_URL being set correctly in the deploy. */
+export function clickPath(
+  eventId: string,
+  feedId: string,
+  surface: "telegram" | "web",
+): string {
+  return `/api/click?e=${encodeURIComponent(eventId)}&f=${encodeURIComponent(feedId)}&s=${surface}`;
 }

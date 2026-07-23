@@ -1,7 +1,7 @@
 import type { DeliveryEvent } from "@/digest/query";
 import { fmtLocalDate, fmtLocalTime } from "@/lib/time";
 import { TIER_ICON, categoryLabel } from "@/scoring/tiers";
-import { clickUrl } from "@/lib/links";
+import { clickPath } from "@/lib/links";
 import { EventTime } from "./EventTime";
 
 export function EventCard({
@@ -14,7 +14,7 @@ export function EventCard({
   tz: string;
 }) {
   const ptLabel = `${fmtLocalDate(event.startsAt, tz)} · ${fmtLocalTime(event.startsAt, tz)} PT`;
-  const href = clickUrl(event.id, feedId, "web");
+  const href = clickPath(event.id, feedId, "web");
   const tag = categoryLabel(event.categoryTag);
 
   return (

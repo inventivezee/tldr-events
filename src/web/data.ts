@@ -3,14 +3,30 @@
 // niche (scores.category_tag) and tier.
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
-import { weeklyWindow, type UtcWindow } from "@/lib/time";
-import { DateTime } from "luxon";
+import {
+  dayWindow,
+  weeklyWindow,
+  nextWeekWindow,
+  type UtcWindow,
+} from "@/lib/time";
 import { queryDeliveryEvents, type DeliveryEvent } from "@/digest/query";
 import type { Tier } from "@/types";
 import { TIER_ORDER } from "@/scoring/tiers";
 import { FEED_ID } from "@/seed/data";
 
 export const DEFAULT_FEED_ID = FEED_ID;
+
+export type RangeKey = "today" | "tomorrow" | "this-week" | "next-week";
+
+export const RANGE_META: Record<
+  RangeKey,
+  { heading: string; blurb: string; path: string; nav: string }
+> = {
+  today: { heading: "Today", blurb: "Today's picks, ranked.", path: "/today", nav: "Today" },
+  tomorrow: { heading: "Tomorrow", blurb: "Tomorrow's picks, ranked.", path: "/tomorrow", nav: "Tomorrow" },
+  "this-week": { heading: "This Week", blurb: "The next 7 days, ranked.", path: "/", nav: "This Week" },
+  "next-week": { heading: "Next Week", blurb: "The following 7 days, ranked.", path: "/next-week", nav: "Next Week" },
+};
 
 export interface FeedMeta {
   id: string;
@@ -43,29 +59,40 @@ export async function getFeedMeta(feedId = DEFAULT_FEED_ID): Promise<FeedMeta | 
   }
 }
 
-export interface WeekView {
+export interface RangeView {
   meta: FeedMeta;
   events: DeliveryEvent[];
   tiers: { tier: Tier; events: DeliveryEvent[] }[];
   categories: string[];
 }
 
-export async function getWeekView(opts: {
+function windowFor(range: RangeKey, tz: string): UtcWindow {
+  const now = new Date();
+  switch (range) {
+    case "today":
+      return dayWindow(now, tz, 0);
+    case "tomorrow":
+      return dayWindow(now, tz, 1);
+    case "this-week":
+      return weeklyWindow(now, tz);
+    case "next-week":
+      return nextWeekWindow(now, tz);
+  }
+}
+
+export async function getRangeView(opts: {
+  range: RangeKey;
   feedId?: string;
-  which: "this" | "next";
   categoryTag?: string;
   tier?: Tier;
-}): Promise<WeekView | null> {
+}): Promise<RangeView | null> {
   const meta = await getFeedMeta(opts.feedId ?? DEFAULT_FEED_ID);
   if (!meta) return null;
 
-  const window: UtcWindow =
-    opts.which === "this"
-      ? weeklyWindow(new Date(), meta.timezone)
-      : nextWeekWindow(meta.timezone);
+  const window = windowFor(opts.range, meta.timezone);
 
   // Query the FULL delivered set (no category filter) so the niche chips always
-  // reflect every niche available this week, then filter in-memory.
+  // reflect every niche available in this range, then filter in-memory.
   const full = await queryDeliveryEvents({
     feedId: meta.id,
     regionId: meta.regionId,
@@ -79,6 +106,7 @@ export async function getWeekView(opts: {
   if (opts.categoryTag) events = events.filter((e) => e.categoryTag === opts.categoryTag);
   if (opts.tier) events = events.filter((e) => e.tier === opts.tier);
 
+  // Rank within each tier by score (highest first), then by start time.
   const byTier = new Map<Tier, DeliveryEvent[]>();
   for (const e of events) {
     const arr = byTier.get(e.tier) ?? [];
@@ -88,20 +116,13 @@ export async function getWeekView(opts: {
   const tiers = [...byTier.entries()]
     .map(([tier, evs]) => ({
       tier,
-      events: evs.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime()),
+      events: evs.sort(
+        (a, b) => b.score - a.score || a.startsAt.getTime() - b.startsAt.getTime(),
+      ),
     }))
     .sort((a, b) => TIER_ORDER[a.tier] - TIER_ORDER[b.tier]);
 
   return { meta, events, tiers, categories };
-}
-
-function nextWeekWindow(tz: string): UtcWindow {
-  // +7 .. +13 local days — contiguous with, and non-overlapping, "this week".
-  const local = DateTime.now().setZone(tz);
-  return {
-    start: local.plus({ days: 7 }).startOf("day").toUTC().toJSDate(),
-    end: local.plus({ days: 13 }).endOf("day").toUTC().toJSDate(),
-  };
 }
 
 export function telegramFollowUrl(): string | null {
