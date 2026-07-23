@@ -131,12 +131,22 @@ export function dayWindow(now: Date, tz: string, offsetDays = 0): UtcWindow {
   };
 }
 
-/** Next week: +7 .. +13 local days (contiguous with, not overlapping, this week). */
-export function nextWeekWindow(now: Date, tz: string): UtcWindow {
+/** This CALENDAR week: today → end of the current week (Sunday; weeks start Monday).
+ *  Starts at today (not Monday) so past days this week aren't shown. */
+export function thisWeekWindow(now: Date, tz: string): UtcWindow {
   const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz);
   return {
-    start: local.plus({ days: 7 }).startOf("day").toUTC().toJSDate(),
-    end: local.plus({ days: 13 }).endOf("day").toUTC().toJSDate(),
+    start: local.startOf("day").toUTC().toJSDate(),
+    end: local.endOf("week").toUTC().toJSDate(),
+  };
+}
+
+/** Next CALENDAR week: next Monday → next Sunday. */
+export function nextWeekWindow(now: Date, tz: string): UtcWindow {
+  const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz).plus({ weeks: 1 });
+  return {
+    start: local.startOf("week").toUTC().toJSDate(),
+    end: local.endOf("week").toUTC().toJSDate(),
   };
 }
 

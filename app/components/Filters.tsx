@@ -22,18 +22,24 @@ export function Filters({
   categories,
   cat,
   tier,
+  all,
 }: {
   basePath: string;
   categories: string[];
   cat?: string;
   tier?: Tier;
+  all?: boolean;
 }) {
-  const tiers: Tier[] = ["dont_miss", "strong"];
+  // In "All events" mode, also offer the 👀 Worth-a-Look tier (hidden by the
+  // quality gate in TLDR mode). Preserve the `all` flag across every filter link.
+  const tiers: Tier[] = all ? ["dont_miss", "strong", "radar"] : ["dont_miss", "strong"];
+  const mode = all ? { all: "1" } : {};
+
   return (
     <div className="mb-6 flex flex-col gap-2">
       <div className="flex flex-wrap gap-2">
         <Link
-          href={href(basePath, { tier })}
+          href={href(basePath, { ...mode, tier })}
           className="rounded-full px-3 py-1 text-xs font-medium"
           style={chipStyle(!cat)}
         >
@@ -42,7 +48,7 @@ export function Filters({
         {categories.map((c) => (
           <Link
             key={c}
-            href={href(basePath, { cat: c, tier })}
+            href={href(basePath, { ...mode, cat: c, tier })}
             className="rounded-full px-3 py-1 text-xs font-medium"
             style={chipStyle(cat === c)}
           >
@@ -52,7 +58,7 @@ export function Filters({
       </div>
       <div className="flex flex-wrap gap-2">
         <Link
-          href={href(basePath, { cat })}
+          href={href(basePath, { ...mode, cat })}
           className="rounded-full px-3 py-1 text-xs font-medium"
           style={chipStyle(!tier)}
         >
@@ -61,7 +67,7 @@ export function Filters({
         {tiers.map((t) => (
           <Link
             key={t}
-            href={href(basePath, { cat, tier: t })}
+            href={href(basePath, { ...mode, cat, tier: t })}
             className="rounded-full px-3 py-1 text-xs font-medium"
             style={chipStyle(tier === t)}
           >

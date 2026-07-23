@@ -4,7 +4,7 @@
 import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import type { FeedRow } from "@/db/schema";
-import { weeklyWindow, type UtcWindow } from "@/lib/time";
+import { thisWeekWindow, nextWeekWindow, type UtcWindow } from "@/lib/time";
 import { DateTime } from "luxon";
 import { queryDeliveryEvents } from "@/digest/query";
 import { renderEventList } from "@/digest/render";
@@ -25,8 +25,8 @@ const HELP =
   "Commands:\n" +
   "/today — today's picks\n" +
   "/tomorrow — tomorrow's picks\n" +
-  "/week — the next 7 days\n" +
-  "/nextweek — the following 7 days\n\n" +
+  "/week — this week (through Sunday)\n" +
+  "/nextweek — next week (Mon–Sun)\n\n" +
   "Curated, scored, and summarized. Skip the firehose.";
 
 export async function handleUpdate(update: TgUpdate): Promise<void> {
@@ -59,10 +59,10 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
       await respond(chatId, feed, tz, tomorrowWindow(tz), "🌅 <b>Tomorrow</b>");
       return;
     case "/week":
-      await respond(chatId, feed, tz, weeklyWindow(new Date(), tz), "🗓️ <b>The Week Ahead</b>");
+      await respond(chatId, feed, tz, thisWeekWindow(new Date(), tz), "🗓️ <b>This Week</b>");
       return;
     case "/nextweek":
-      await respond(chatId, feed, tz, nextWeekWindow(tz), "🗓️ <b>Next Week</b>");
+      await respond(chatId, feed, tz, nextWeekWindow(new Date(), tz), "🗓️ <b>Next Week</b>");
       return;
     // Admin/test commands (gated).
     case "/post_daily":
@@ -130,12 +130,5 @@ function tomorrowWindow(tz: string): UtcWindow {
   return {
     start: local.startOf("day").toUTC().toJSDate(),
     end: local.endOf("day").toUTC().toJSDate(),
-  };
-}
-function nextWeekWindow(tz: string): UtcWindow {
-  const local = DateTime.now().setZone(tz);
-  return {
-    start: local.plus({ days: 7 }).startOf("day").toUTC().toJSDate(),
-    end: local.plus({ days: 13 }).endOf("day").toUTC().toJSDate(),
   };
 }

@@ -6,6 +6,8 @@ import {
   startLocalDate,
   dailyWindow,
   weeklyWindow,
+  thisWeekWindow,
+  nextWeekWindow,
 } from "@/lib/time";
 
 const PT = "America/Los_Angeles";
@@ -66,5 +68,18 @@ describe("windows", () => {
     const days = (w.end.getTime() - w.start.getTime()) / 86400000;
     expect(days).toBeGreaterThan(6.9);
     expect(days).toBeLessThan(7.05);
+  });
+
+  it("calendar weeks: Thu Jul 23 → Jul 28 is next week, not this week", () => {
+    // Thursday 2026-07-23, ~noon PT.
+    const now = new Date("2026-07-23T19:00:00Z");
+    const jul28 = new Date("2026-07-29T01:00:00Z"); // Tue Jul 28 6pm PT
+    const tw = thisWeekWindow(now, PT);
+    const nw = nextWeekWindow(now, PT);
+    // Jul 28 excluded from this week, included in next week.
+    expect(jul28 >= tw.start && jul28 <= tw.end).toBe(false);
+    expect(jul28 >= nw.start && jul28 <= nw.end).toBe(true);
+    // This week ends before next week begins (no overlap/gap at the boundary).
+    expect(tw.end.getTime()).toBeLessThan(nw.start.getTime());
   });
 });

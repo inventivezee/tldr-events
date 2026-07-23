@@ -33,7 +33,7 @@ function eventBlock(e: DeliveryEvent, feedId: string, tz: string): DigestChunk {
   const icon = TIER_ICON[e.tier];
   const link = clickUrl(e.id, feedId, "telegram");
   const title = htmlEscape(truncate(e.title, 120));
-  const score = e.score.toFixed(1).replace(/\.0$/, "");
+  const score = String(Math.round(e.score));
 
   const meta: string[] = [`🕐 ${fmtLocalTime(e.startsAt, tz)}`];
   if (e.city) meta.push(`📍 ${htmlEscape(e.city)}`);

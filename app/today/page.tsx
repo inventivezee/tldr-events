@@ -10,7 +10,7 @@ export const metadata = {
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ cat?: string; tier?: string }>;
+  searchParams: Promise<{ cat?: string; tier?: string; all?: string }>;
 }) {
   const sp = await searchParams;
   return <RangeView range="today" searchParams={sp} />;

@@ -31,7 +31,7 @@ export function EventCard({
             className="rounded-md px-2 py-0.5 text-sm font-bold"
             style={{ background: "var(--panel-2)", color: "var(--accent)" }}
           >
-            {event.score.toFixed(1)}/10
+            {Math.round(event.score)}/10
           </span>
         </div>
         {tag ? (

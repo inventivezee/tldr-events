@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import {
   dayWindow,
-  weeklyWindow,
+  thisWeekWindow,
   nextWeekWindow,
   type UtcWindow,
 } from "@/lib/time";
@@ -74,7 +74,7 @@ function windowFor(range: RangeKey, tz: string): UtcWindow {
     case "tomorrow":
       return dayWindow(now, tz, 1);
     case "this-week":
-      return weeklyWindow(now, tz);
+      return thisWeekWindow(now, tz);
     case "next-week":
       return nextWeekWindow(now, tz);
   }
@@ -85,18 +85,23 @@ export async function getRangeView(opts: {
   feedId?: string;
   categoryTag?: string;
   tier?: Tier;
+  all?: boolean;
 }): Promise<RangeView | null> {
   const meta = await getFeedMeta(opts.feedId ?? DEFAULT_FEED_ID);
   if (!meta) return null;
 
   const window = windowFor(opts.range, meta.timezone);
 
+  // "All Events" mode drops the quality gate (min_score 0); default TLDR mode
+  // keeps the feed's min_score so only worth-your-time events show.
+  const minScore = opts.all ? 0 : meta.minScore;
+
   // Query the FULL delivered set (no category filter) so the niche chips always
   // reflect every niche available in this range, then filter in-memory.
   const full = await queryDeliveryEvents({
     feedId: meta.id,
     regionId: meta.regionId,
-    minScore: meta.minScore,
+    minScore,
     window,
   });
 

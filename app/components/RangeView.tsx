@@ -9,13 +9,14 @@ export async function RangeView({
   searchParams,
 }: {
   range: RangeKey;
-  searchParams: { cat?: string; tier?: string };
+  searchParams: { cat?: string; tier?: string; all?: string };
 }) {
   const cat = searchParams.cat;
   const tier = (searchParams.tier as Tier) || undefined;
+  const all = searchParams.all === "1";
   const { heading, blurb, path } = RANGE_META[range];
 
-  const view = await getRangeView({ range, categoryTag: cat, tier });
+  const view = await getRangeView({ range, categoryTag: cat, tier, all });
 
   if (!view) {
     return (
@@ -29,17 +30,23 @@ export async function RangeView({
     );
   }
 
+  const modeNote = all
+    ? "Showing ALL events for this window — no quality filter, ranked by score (including lower-signal ones)."
+    : `${blurb} Each event is scored out of 10 on who's in the room and why it matters.`;
+
   return (
     <div>
       <section className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">{heading}</h1>
+        <h1 className="text-2xl font-bold tracking-tight">
+          {heading}
+          {all ? <span className="ml-2 text-sm font-normal" style={{ color: "var(--muted)" }}>· All events</span> : null}
+        </h1>
         <p className="mt-1 text-sm" style={{ color: "var(--muted)" }}>
-          {view.meta.name}. {blurb} Each event is scored out of 10 on who&apos;s in
-          the room and why it matters. Times in PT (localized to you).
+          {view.meta.name}. {modeNote} Times in PT (localized to you).
         </p>
       </section>
 
-      <Filters basePath={path} categories={view.categories} cat={cat} tier={tier} />
+      <Filters basePath={path} categories={view.categories} cat={cat} tier={tier} all={all} />
 
       {view.events.length === 0 ? (
         <div
@@ -47,8 +54,9 @@ export async function RangeView({
           style={{ background: "var(--panel)", border: "1px solid var(--border)" }}
         >
           <p className="text-sm" style={{ color: "var(--muted)" }}>
-            Nothing clears the bar for this view yet. We only surface events genuinely
-            worth your time — check back soon, or follow along on Telegram.
+            {all
+              ? "No events found for this window yet — the pipeline may still be scoring. Check back soon."
+              : "Nothing clears the bar for this view yet. We only surface events genuinely worth your time — check back soon, or follow along on Telegram."}
           </p>
           <div className="mt-4 flex justify-center">
             <FollowButton />
