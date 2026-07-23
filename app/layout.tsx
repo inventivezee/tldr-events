@@ -1,38 +1,40 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { Header } from "./components/Header";
-import { Footer } from "./components/Footer";
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000";
+const description =
+  "The best Bay Area events for founders and investors — curated, scored, and ranked by signal. Skip the firehose.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "TLDR Events — Bay Area events for founders & investors",
+    default: "TLDR Events — Bay Area events, ranked by signal",
     template: "%s · TLDR Events",
   },
-  description:
-    "The best Bay Area events for founders and investors — curated, scored, and summarized. Skip the firehose.",
+  description,
+  applicationName: "TLDR Events",
   openGraph: {
-    title: "TLDR Events",
-    description:
-      "The best Bay Area events for founders and investors — curated, scored, and summarized.",
-    url: siteUrl,
-    siteName: "TLDR Events",
     type: "website",
+    siteName: "TLDR Events",
+    title: "TLDR Events",
+    description,
+    url: siteUrl,
   },
-  twitter: { card: "summary_large_image", title: "TLDR Events" },
+  twitter: { card: "summary_large_image", title: "TLDR Events", description },
   robots: { index: true, follow: true },
+};
+
+export const viewport: Viewport = {
+  colorScheme: "dark",
+  themeColor: "#08080d",
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <Header />
-        <main className="container-tldr py-6">{children}</main>
-        <Footer />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

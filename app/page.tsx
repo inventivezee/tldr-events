@@ -1,19 +1,13 @@
 import { RangeView } from "./components/RangeView";
 
-// ISR: rebuild at most every 15 min (SEO-indexed, fresh) (PRD §13).
-export const revalidate = 900;
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "This Week",
   description:
-    "This week's best Bay Area events for founders and investors — curated, scored out of 10, and summarized.",
+    "This week's best Bay Area events for founders and investors — curated, scored, and ranked by signal.",
 };
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ cat?: string; tier?: string; all?: string }>;
-}) {
-  const sp = await searchParams;
-  return <RangeView range="this-week" searchParams={sp} />;
+export default function Page() {
+  return <RangeView range="this-week" />;
 }

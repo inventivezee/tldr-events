@@ -1,17 +1,12 @@
 import { RangeView } from "../components/RangeView";
 
-export const revalidate = 900;
+export const dynamic = "force-dynamic";
 
 export const metadata = {
   title: "Tomorrow",
-  description: "Tomorrow's best Bay Area founder & investor events, ranked out of 10.",
+  description: "Tomorrow's best Bay Area founder & investor events, ranked by signal.",
 };
 
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ cat?: string; tier?: string; all?: string }>;
-}) {
-  const sp = await searchParams;
-  return <RangeView range="tomorrow" searchParams={sp} />;
+export default function Page() {
+  return <RangeView range="tomorrow" />;
 }
