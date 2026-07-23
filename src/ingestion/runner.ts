@@ -15,6 +15,7 @@ import {
   type BrowserSession,
 } from "@/lib/browserbase";
 import { normalizeText, normalizeVenue } from "@/lib/text";
+import { enrichLumaEvents } from "./luma-detail";
 import { contentHashForNormalized } from "@/lib/hash";
 import { logger } from "@/lib/logger";
 
@@ -113,6 +114,15 @@ export async function runIngestion(opts?: {
       }
       try {
         const events = await adapter(source, ctx);
+        // Fill lu.ma links that arrived without a count (e.g. Cerebral Valley /
+        // Google rows) BEFORE upsert, so the count is part of content_hash and
+        // survives re-ingestion. Luma-sourced rows already have counts → skipped.
+        try {
+          const n = await enrichLumaEvents(events);
+          if (n) log.info(`${source.id}: enriched ${n} lu.ma link(s) with attendance`);
+        } catch (e) {
+          log.warn(`luma enrich failed for ${source.id} (continuing)`, e);
+        }
         const upserted = await upsertEvents(source, events);
         results.push({
           sourceId: source.id,

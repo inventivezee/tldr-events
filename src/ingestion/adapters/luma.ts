@@ -8,13 +8,7 @@ import type { FetchFn } from "../types";
 import { parseToUtc } from "@/lib/time";
 import { categorize } from "../categorize";
 import { logger } from "@/lib/logger";
-import {
-  BASE,
-  getJson,
-  personRefs,
-  fetchLumaDetail,
-  pool,
-} from "../luma-detail";
+import { BASE, getJson, personRefs } from "../luma-detail";
 
 const log = logger("adapter:luma");
 const MAX_PAGES = 6;
@@ -125,21 +119,9 @@ export const fetchLuma: FetchFn = async (source) => {
     log.warn(`SCHEMA DRIFT? ${source.id} returned ${entries.length} rows, parsed 0`);
   }
 
-  // The list endpoint omits real attendance and full host/guest lists, so enrich
-  // each event from its detail endpoint (guest_count/num_guests + hosts +
-  // featured_guests). Bounded concurrency; fail-soft per event.
-  let enriched = 0;
-  await pool(events, 5, async (ev) => {
-    const detail = await fetchLumaDetail(ev.source_event_id);
-    if (!detail) return;
-    if (detail.guestCount != null) ev.guest_count = detail.guestCount;
-    if (detail.hosts.length) ev.hosts = detail.hosts;
-    if (detail.speakers.length) ev.speakers = detail.speakers;
-    if (detail.guestCount != null || detail.hosts.length || detail.speakers.length) enriched++;
-  });
-
-  log.info(
-    `${source.id}: ${events.length} events from ${entries.length} entries (${enriched} enriched via detail)`,
-  );
+  // Attendance + full host/guest lists come from the detail endpoint, filled
+  // uniformly for every source by enrichLumaEvents in the ingestion runner (so
+  // lu.ma links from Cerebral Valley / Google are covered too) — not here.
+  log.info(`${source.id}: ${events.length} events from ${entries.length} entries`);
   return events;
 };

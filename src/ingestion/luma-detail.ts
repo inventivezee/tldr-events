@@ -3,7 +3,7 @@
 // Cerebral Valley / Google / etc., which never hit the Luma list endpoint).
 // The detail endpoint `event/get?event_api_id=<x>` accepts BOTH the api_id and
 // the public URL slug/short-code, so any lu.ma URL can be resolved.
-import type { PersonRef } from "@/types";
+import type { NormalizedEvent, PersonRef } from "@/types";
 
 export const BASE = process.env.LUMA_API_BASE || "https://api.lu.ma";
 
@@ -98,6 +98,42 @@ export function lumaSlugFromUrl(url: string | null | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** Enrich normalized events IN PLACE with Luma attendance + hosts/guests, for any
+ *  event whose URL is a lu.ma link and that arrived WITHOUT a count. Runs for every
+ *  source in the ingestion runner, so lu.ma events pulled via Cerebral Valley /
+ *  Google (which never hit the Luma list endpoint) get their real numbers at
+ *  ingest time — before content_hash is computed, so the count persists across
+ *  re-ingests and drives scoring. Luma-sourced events already carry a count and
+ *  are skipped. Fail-soft per event. Returns how many were enriched. */
+export async function enrichLumaEvents(
+  events: NormalizedEvent[],
+  concurrency = 5,
+): Promise<number> {
+  let enriched = 0;
+  await pool(events, concurrency, async (ev) => {
+    if (ev.guest_count != null && ev.guest_count > 0) return; // already have it
+    const slug = lumaSlugFromUrl(ev.url);
+    if (!slug) return;
+    const d = await fetchLumaDetail(slug);
+    if (!d) return;
+    let touched = false;
+    if (d.guestCount != null && d.guestCount > (ev.guest_count ?? 0)) {
+      ev.guest_count = d.guestCount;
+      touched = true;
+    }
+    if (!(ev.hosts?.length ?? 0) && d.hosts.length) {
+      ev.hosts = d.hosts;
+      touched = true;
+    }
+    if (!(ev.speakers?.length ?? 0) && d.speakers.length) {
+      ev.speakers = d.speakers;
+      touched = true;
+    }
+    if (touched) enriched++;
+  });
+  return enriched;
 }
 
 /** Run `fn` over items with bounded concurrency. */
