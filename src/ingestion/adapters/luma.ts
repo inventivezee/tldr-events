@@ -37,13 +37,70 @@ function extractEntries(payload: any): any[] {
 
 function personRefs(list: any): PersonRef[] {
   if (!Array.isArray(list)) return [];
-  return list
-    .filter((p) => p && (p.name || p.display_name || p.full_name))
-    .map((p) => ({
-      name: String(p.name || p.display_name || p.full_name).trim(),
-      bio: p.bio || p.headline || p.about || null,
-    }))
-    .filter((p) => p.name.length > 0);
+  const out: PersonRef[] = [];
+  for (const p of list) {
+    if (!p) continue;
+    const name = String(
+      p.name ||
+        p.display_name ||
+        p.full_name ||
+        [p.first_name, p.last_name].filter(Boolean).join(" "),
+    ).trim();
+    if (!name) continue;
+    out.push({ name, bio: p.bio || p.bio_short || p.headline || p.about || null });
+  }
+  return out;
+}
+
+/** Real attendance from a Luma DETAIL payload. `guest_count` is 0 when the host
+ *  hides the guest list, but num_guests / num_tickets_registered still carry it —
+ *  take the max integer across those keys (per-tier values are ≤ the total). */
+function collectMaxCount(obj: any): number | null {
+  const KEYS = new Set(["guest_count", "num_guests", "num_tickets_registered"]);
+  let max = 0;
+  let found = false;
+  const walk = (o: any, d: number) => {
+    if (!o || d > 4 || typeof o !== "object") return;
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (KEYS.has(k) && typeof v === "number" && Number.isFinite(v)) {
+        found = true;
+        if (v > max) max = v;
+      } else if (v && typeof v === "object") {
+        walk(v, d + 1);
+      }
+    }
+  };
+  walk(obj, 0);
+  return found ? max : null;
+}
+
+/** Fetch a single event's detail (attendance + real hosts/featured guests). */
+async function fetchLumaDetail(
+  apiId: string,
+): Promise<{ guestCount: number | null; hosts: PersonRef[]; speakers: PersonRef[] } | null> {
+  try {
+    const d = await getJson(`${BASE}/event/get?event_api_id=${encodeURIComponent(apiId)}`);
+    return {
+      guestCount: collectMaxCount(d),
+      hosts: personRefs(d.hosts),
+      speakers: personRefs(d.featured_guests),
+    };
+  } catch {
+    return null; // fail-soft: keep list data for this event
+  }
+}
+
+/** Run `fn` over items with bounded concurrency. */
+async function pool<T>(items: T[], concurrency: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
 }
 
 export function parseLumaEntry(source: SourceRow, entry: any): NormalizedEvent | null {
@@ -137,10 +194,26 @@ export const fetchLuma: FetchFn = async (source) => {
       log.warn(`skip malformed entry in ${source.id}`, e);
     }
   }
-  log.info(`${source.id}: ${events.length} events from ${entries.length} entries`);
   if (entries.length > 0 && events.length === 0) {
     // Shape drift signal (§9.3): rows present but none parsed.
     log.warn(`SCHEMA DRIFT? ${source.id} returned ${entries.length} rows, parsed 0`);
   }
+
+  // The list endpoint omits real attendance and full host/guest lists, so enrich
+  // each event from its detail endpoint (guest_count/num_guests + hosts +
+  // featured_guests). Bounded concurrency; fail-soft per event.
+  let enriched = 0;
+  await pool(events, 5, async (ev) => {
+    const detail = await fetchLumaDetail(ev.source_event_id);
+    if (!detail) return;
+    if (detail.guestCount != null) ev.guest_count = detail.guestCount;
+    if (detail.hosts.length) ev.hosts = detail.hosts;
+    if (detail.speakers.length) ev.speakers = detail.speakers;
+    if (detail.guestCount != null || detail.hosts.length || detail.speakers.length) enriched++;
+  });
+
+  log.info(
+    `${source.id}: ${events.length} events from ${entries.length} entries (${enriched} enriched via detail)`,
+  );
   return events;
 };
