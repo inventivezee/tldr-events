@@ -8,7 +8,7 @@ export function tierFromScore(score: number): Tier {
 }
 
 export const TIER_LABEL: Record<Tier, string> = {
-  dont_miss: "Don't Miss",
+  dont_miss: "Must Attend",
   strong: "Strong Pick",
   radar: "Worth a Look",
 };

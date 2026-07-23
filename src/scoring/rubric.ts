@@ -40,7 +40,7 @@ quality from the hosts, featured guests, and the hosting organization's prestige
 - Huge generic conferences where the "room" is diluted (unless the specific session/guest list is elite).
 
 ## Scoring guidance (0–10, one decimal)
-- **8.0–10.0 — Don't Miss:** an elite room and/or unmissable signal for a Bay Area founder/investor
+- **8.0–10.0 — Must Attend:** an elite room and/or unmissable signal for a Bay Area founder/investor
   (e.g. a small dinner with multiple top-fund partners; a demo day from a company that matters;
   a hackathon with serious builders and prizes).
 - **6.0–7.9 — Strong Pick:** clearly worth considering — good hosts/speakers, real relevance,

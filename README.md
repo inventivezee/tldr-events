@@ -71,7 +71,7 @@ npm run db:seed        # inserts region + 8 sources + the bay_founder feed
 npm run eval
 ```
 
-Scores the labeled set in `src/eval/labeled-set.ts` and prints **top-tier precision**. Replace those illustrative entries with 30–50 **real** Bay Area events labeled from a founder/investor POV, then iterate `src/scoring/rubric.ts` until the Don't-Miss tier is trustworthy. Bump `RUBRIC_VERSION` on any rubric change (it triggers a re-score).
+Scores the labeled set in `src/eval/labeled-set.ts` and prints **top-tier precision**. Replace those illustrative entries with 30–50 **real** Bay Area events labeled from a founder/investor POV, then iterate `src/scoring/rubric.ts` until the Must-Attend tier is trustworthy. Bump `RUBRIC_VERSION` on any rubric change (it triggers a re-score).
 
 ### 4. Run the pipeline locally
 
