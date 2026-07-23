@@ -5,6 +5,7 @@ import { fetchCerebralValley } from "./cerebralValley";
 import { fetchEventbrite } from "./eventbrite";
 import { fetchPartiful } from "./partiful";
 import { fetchGoogle } from "./google";
+import { fetchSupermomos } from "./supermomos";
 
 // Browser sources dispatch by source id; API sources by kind.
 const BROWSER_BY_ID: Record<string, FetchFn> = {
@@ -12,6 +13,7 @@ const BROWSER_BY_ID: Record<string, FetchFn> = {
   eventbrite_bay: fetchEventbrite,
   partiful_sf: fetchPartiful,
   google_sf: fetchGoogle,
+  supermomos_sf: fetchSupermomos,
 };
 
 export function adapterFor(source: SourceRow): FetchFn | null {
@@ -33,4 +35,5 @@ export {
   fetchEventbrite,
   fetchPartiful,
   fetchGoogle,
+  fetchSupermomos,
 };

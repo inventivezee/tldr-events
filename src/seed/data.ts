@@ -51,6 +51,14 @@ export const SEED_SOURCES: SeedSource[] = [
     config: { cal_id: "cal-Sl7q1nHTRXQzjP2" },
   },
   {
+    id: "supermomos_sf",
+    name: "Supermomos (SF)",
+    kind: "browser",
+    region_id: "sf_bay",
+    priority: 25,
+    config: { url: "https://www.supermomos.com/community-events/sf" },
+  },
+  {
     id: "cerebral_valley",
     name: "Cerebral Valley",
     kind: "browser",
