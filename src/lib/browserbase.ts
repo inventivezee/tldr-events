@@ -34,13 +34,22 @@ export async function createBrowserSession(): Promise<BrowserSession> {
   }
 
   const bb = new Browserbase({ apiKey });
+  // Advanced Stealth Mode better evades fingerprint-based bot detection (e.g.
+  // Google's /sorry wall). It requires the Browserbase ENTERPRISE plan — enabling
+  // it without that plan returns 403 and fails session creation — so it's opt-in
+  // via env and OFF by default. Residential proxies below are ALWAYS on regardless.
+  const advancedStealth = process.env.BROWSERBASE_ADVANCED_STEALTH === "true";
   const session = await bb.sessions.create({
     projectId,
+    // Residential proxies on EVERY session (US geolocation) — verified residential
+    // exit IPs; required for sources that block datacenter IPs.
     proxies: [{ type: "browserbase", geolocation: { country: "US" } }],
-    // Reasonable stealth defaults; Browserbase applies fingerprinting.
-    browserSettings: { solveCaptchas: false },
+    browserSettings: {
+      solveCaptchas: false,
+      ...(advancedStealth ? { advancedStealth: true } : {}),
+    },
   });
-  log.info(`session ${session.id} created`);
+  log.info(`session ${session.id} created${advancedStealth ? " (advanced stealth)" : ""}`);
 
   const browser = await chromium.connectOverCDP(session.connectUrl);
   const context = browser.contexts()[0] ?? (await browser.newContext());
