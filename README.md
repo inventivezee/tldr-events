@@ -45,10 +45,15 @@ Key source files: `src/ingestion/*`, `src/dedup/canonicalize.ts`, `src/research/
 
 Fill `.env.local` (already scaffolded; git-ignored). See it for exactly where each value comes from. Minimum to run anything: `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) and `LLM_API_KEY`. Full pipeline also needs `BROWSERBASE_*` and `TELEGRAM_*`.
 
-- **Supabase** → Project Settings → Database → Connection string. `DATABASE_URL` = **Transaction pooler** (`:6543`); `DATABASE_URL_UNPOOLED` = **Session/direct** (`:5432`, for migrations).
+- **Supabase** → click the green **Connect** button at the top of the dashboard → **Connection String**. `DATABASE_URL` = **Transaction pooler** (`:6543`); `DATABASE_URL_UNPOOLED` = **Session pooler** (`:5432`, for migrations). The DB password is embedded in the string (there's no separate password env). *Note: Supabase's publishable/secret API keys are for the client SDK, not this direct Postgres connection — not used here.*
 - **Anthropic** → console.anthropic.com → API key → `LLM_API_KEY`.
 - **Browserbase** → dashboard → `BROWSERBASE_API_KEY` + `BROWSERBASE_PROJECT_ID`.
-- **Telegram** → @BotFather `/newbot` → `TELEGRAM_BOT_TOKEN`; create a channel (start with a **private test channel** for shadow-mode QA), add the bot as admin, set `TELEGRAM_CHANNEL_ID` (`@handle` or `-100…`).
+- **Telegram** → @BotFather `/newbot` → `TELEGRAM_BOT_TOKEN`. This deployment posts to a **group**: add the bot to your group and promote it to admin (post rights). Set `TELEGRAM_CHANNEL_ID` to the group's numeric chat id (negative, e.g. `-100…`) — run `npm run doctor` after messaging the group to have it printed. `TELEGRAM_ALLOWED_CHAT_IDS` gates admin/test commands (set to your Telegram user id).
+
+Verify everything is wired with a live preflight:
+```bash
+npm run doctor   # checks DB, LLM, Browserbase, Telegram; lists recent chat ids
+```
 
 `TELEGRAM_WEBHOOK_SECRET` and `CRON_SECRET` are pre-generated in `.env.local`.
 
@@ -83,7 +88,7 @@ npm run dev                      # http://localhost:3000
 ## Deploy (Vercel)
 
 1. Push this repo to GitHub (done — see below) and **Import** it in Vercel.
-2. Add **every** `.env.local` value to Vercel → Settings → Environment Variables. Set `NEXT_PUBLIC_SITE_URL` to your real domain and `NEXT_PUBLIC_TELEGRAM_URL` to your channel link.
+2. In **production, Vercel's Environment Variables are the source of truth** — add every value there (Project → Settings → Environment Variables). Set `NEXT_PUBLIC_SITE_URL` to your real domain and `NEXT_PUBLIC_TELEGRAM_URL` to your group's invite link. `.env.local` is only for running scripts on your own machine; to avoid maintaining two copies, set them in Vercel once and run `vercel env pull .env.local` to sync locally when you need `db:migrate`/`db:seed`/`eval`.
 3. Ensure the project is on the **Pro plan** (needed for the 15-minute digest cron). `vercel.json` registers the crons automatically; Vercel calls them with the `CRON_SECRET`.
 4. Run migrations + seed against the production DB (from your machine with prod `DATABASE_URL`, or a one-off): `npm run db:migrate && npm run db:seed`.
 5. Register the Telegram webhook (after the domain is live):
@@ -96,6 +101,15 @@ You can trigger any job manually (e.g. to smoke-test) with the secret:
 ```bash
 curl "$SITE/api/cron/ingest?secret=$CRON_SECRET"
 ```
+
+### Hosting: Vercel vs Railway
+
+Both work; the code is portable (plain Next.js + node scripts + scheduler-agnostic cron endpoints protected by `CRON_SECRET`).
+
+- **Vercel (recommended, and what's wired up):** best-in-class for the SEO/ISR web surface, zero-config deploy, built-in Cron. The pipeline is batched, budget-bounded, and lock-guarded to fit serverless function limits. Needs the **Pro** plan for the 15-min cron cadence (well within the $200/mo budget).
+- **Railway:** better if you'd rather run the pipeline as one long-lived worker with no function-duration limits (heavy browser scraping), want to avoid Vercel Pro, or host Postgres alongside. You'd run `next start` for the web and either Railway Cron hitting the same `/api/cron/*` endpoints or a small scheduler running the `scripts/run-pipeline.ts` functions. Trade-off: less optimal web/edge hosting and a bit more ops.
+
+Bottom line: **stay on Vercel** unless live runs show the browser scrapes consistently bumping the function time limit — then move the pipeline to a Railway worker (the web can stay on Vercel).
 
 ---
 
