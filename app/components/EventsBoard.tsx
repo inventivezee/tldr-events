@@ -49,6 +49,8 @@ export function EventsBoard({
   const [tier, setTier] = useState<"all" | BoardTier>("all");
   const [showLow, setShowLow] = useState(false);
   const [displayTz, setDisplayTz] = useState(BAY_TZ);
+  // Event whose source links are being chosen (multi-source events only).
+  const [chooser, setChooser] = useState<BoardEvent | null>(null);
 
   useEffect(() => {
     setCategory("All");
@@ -311,6 +313,7 @@ export function EventsBoard({
                           event={event}
                           rank={rankOf(event.id)}
                           tz={displayTz}
+                          onChoose={setChooser}
                         />
                       ))}
                     </div>
@@ -333,11 +336,69 @@ export function EventsBoard({
           </a>
         ) : null}
       </footer>
+
+      {chooser ? <LinkChooser event={chooser} onClose={() => setChooser(null)} /> : null}
     </div>
   );
 }
 
-function EventRow({ event, rank, tz }: { event: BoardEvent; rank: number; tz: string }) {
+/** Chooser for an event listed in more than one place — e.g. a Luma registration
+ *  page and the host's own site. Opens when the card (not a specific link) is
+ *  clicked. */
+function LinkChooser({ event, onClose }: { event: BoardEvent; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div className="link-modal-backdrop" onClick={onClose}>
+      <div
+        className="link-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="link-modal-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <small>Listed in {event.links.length} places</small>
+        <strong id="link-modal-title">{event.title}</strong>
+        <div className="link-modal-actions">
+          {event.links.map((l, i) => (
+            <a
+              key={l.clickUrl}
+              href={l.clickUrl}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              autoFocus={i === 0}
+              onClick={onClose}
+            >
+              View on {l.label}
+              <i aria-hidden="true">↗</i>
+            </a>
+          ))}
+        </div>
+        <button type="button" className="link-modal-close" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EventRow({
+  event,
+  rank,
+  tz,
+  onChoose,
+}: {
+  event: BoardEvent;
+  rank: number;
+  tz: string;
+  onChoose: (event: BoardEvent) => void;
+}) {
   const info = TIER_META[event.tier];
   const details = [
     formatEventTime(event.startsAt, tz),
@@ -345,18 +406,16 @@ function EventRow({ event, rank, tz }: { event: BoardEvent; rank: number; tz: st
     event.city,
   ].filter(Boolean) as string[];
 
-  return (
-    <article>
-      <a
-        className={`event-card${rank === 1 ? " top-ranked" : ""}`}
-        href={event.clickUrl}
-        target="_blank"
-        rel="noopener noreferrer nofollow"
-        aria-label={`View ${event.title} on ${event.source}; opens in a new tab`}
-      >
-        <span className="rank" aria-label={`Rank ${rank}`}>
-          {String(rank).padStart(2, "0")}
-        </span>
+  // This event is listed in more than one place (e.g. Luma + the host's own
+  // site). A card can't be one big <a> then — the per-source links live inside
+  // it — so it becomes a button that opens the chooser.
+  const multi = event.links.length > 1;
+  const cardClass = `event-card${rank === 1 ? " top-ranked" : ""}${multi ? " multi-link" : ""}`;
+  const inner = (
+    <>
+      <span className="rank" aria-label={`Rank ${rank}`}>
+        {String(rank).padStart(2, "0")}
+      </span>
         <span className="score" aria-label={`${event.score.toFixed(1)} out of 10`}>
           <strong>{event.score.toFixed(1)}</strong>
           <small>Signal / 10</small>
@@ -390,23 +449,74 @@ function EventRow({ event, rank, tz }: { event: BoardEvent; rank: number; tz: st
           ) : null}
         </span>
 
-        <span className="room-signal">
-          <small>Room signal</small>
-          <strong>
-            {event.guestCount && event.guestCount > 0
-              ? `${event.guestCount.toLocaleString()} going`
-              : "Room TBD"}
-          </strong>
-          <span>{event.notables.length ? event.notables.join(" · ") : "Hosts not yet researched"}</span>
-        </span>
+      <span className="room-signal">
+        <small>Room signal</small>
+        <strong>
+          {event.guestCount && event.guestCount > 0
+            ? `${event.guestCount.toLocaleString()} going`
+            : "Room TBD"}
+        </strong>
+        <span>{event.notables.length ? event.notables.join(" · ") : "Hosts not yet researched"}</span>
+      </span>
+    </>
+  );
 
-        <span className="event-action">
-          <span>
-            View on {event.source}
-            <i aria-hidden="true">↗</i>
+  if (!multi) {
+    return (
+      <article>
+        <a
+          className={cardClass}
+          href={event.clickUrl}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+          aria-label={`View ${event.title} on ${event.source}; opens in a new tab`}
+        >
+          {inner}
+          <span className="event-action">
+            <span>
+              View on {event.source}
+              <i aria-hidden="true">↗</i>
+            </span>
           </span>
+        </a>
+      </article>
+    );
+  }
+
+  // Multi-source: the card itself opens the chooser; the individual links stay
+  // directly clickable on the right (stopPropagation so they don't also open it).
+  return (
+    <article>
+      <div
+        className={cardClass}
+        role="button"
+        tabIndex={0}
+        aria-haspopup="dialog"
+        aria-label={`${event.title} — listed in ${event.links.length} places; choose where to open`}
+        onClick={() => onChoose(event)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onChoose(event);
+          }
+        }}
+      >
+        {inner}
+        <span className="event-action multi">
+          {event.links.map((l) => (
+            <a
+              key={l.clickUrl}
+              href={l.clickUrl}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+              onClick={(e) => e.stopPropagation()}
+            >
+              View on {l.label}
+              <i aria-hidden="true">↗</i>
+            </a>
+          ))}
         </span>
-      </a>
+      </div>
     </article>
   );
 }

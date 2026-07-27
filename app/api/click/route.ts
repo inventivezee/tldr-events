@@ -35,11 +35,26 @@ export async function GET(req: NextRequest) {
     try {
       const db = getDb();
       const [row] = await db
-        .select({ url: schema.events.url })
+        .select({ url: schema.events.url, group: schema.events.canonicalGroup })
         .from(schema.events)
         .where(eq(schema.events.id, eventId))
         .limit(1);
       if (isHttp(row?.url)) target = row!.url!;
+
+      // `alt` selects a different source link for the SAME canonical event (e.g.
+      // the host's own site instead of Luma). The target still comes from the DB,
+      // and only from a row in the same canonical group — never from the query
+      // string — so this stays closed to open-redirect abuse. The click is logged
+      // against the canonical event either way.
+      const altId = searchParams.get("alt");
+      if (row?.group && altId && /^[0-9a-f-]{36}$/i.test(altId)) {
+        const [alt] = await db
+          .select({ url: schema.events.url, group: schema.events.canonicalGroup })
+          .from(schema.events)
+          .where(eq(schema.events.id, altId))
+          .limit(1);
+        if (alt?.group === row.group && isHttp(alt?.url)) target = alt!.url!;
+      }
       // Log best-effort; never block the redirect on a logging failure.
       await db.insert(schema.clickEvents).values({
         eventId,

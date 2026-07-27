@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cronAuthorized } from "@/cron/guard";
+import { dailyRunDue, skippedResponse } from "@/cron/window";
 import { withJobLock, LOCK, LOCK_TTL } from "@/db/client";
 import { runDedup } from "@/dedup/canonicalize";
 import { runLumaBackfill } from "@/ingestion/luma-backfill";
@@ -10,6 +11,8 @@ export const maxDuration = 300;
 
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ ok: false }, { status: 401 });
+  // Pipeline runs once a day, starting at the local run hour (see cron/window).
+  if (!dailyRunDue(req)) return NextResponse.json(skippedResponse());
   const r = await withJobLock(LOCK.dedup, LOCK_TTL.dedup, async () => {
     // Enrich cross-source lu.ma links (attendance + hosts) BEFORE dedup, so the
     // canonical primary and the scorer both see the real numbers. Fail-soft: a

@@ -54,13 +54,19 @@ function fmtWhen(utc: Date, tz: string): string {
 
 function eventBlock(e: DeliveryEvent, tz: string): string {
   const title = htmlEscape(truncate(e.title, 90));
-  const link = e.url ? `<a href="${urlAttr(e.url)}">${title}</a>` : title;
+  const primary = e.links[0]?.url ?? e.url;
+  const link = primary ? `<a href="${urlAttr(primary)}">${title}</a>` : title;
   // The category emoji IS the bullet (falls back to • when there's no category).
   const bullet = CAT_EMOJI[e.categoryTag ?? ""] ?? "•";
   const parts = [fmtWhen(e.startsAt, tz)];
   // Only show attendance when we actually have it — a null/0 count is "unknown",
   // not "zero people", and a fabricated "👥 0" reads as a dead event.
   if (e.guestCount != null && e.guestCount > 0) parts.push(`👥 ${e.guestCount}`);
+  // The title links to the primary source; if the same event is also listed
+  // elsewhere (e.g. the host's own site), offer those as extra links.
+  for (const alt of e.links.slice(1)) {
+    parts.push(`<a href="${urlAttr(alt.url)}">${htmlEscape(alt.label)}</a>`);
+  }
   let block = `${bullet} ${link}\n${parts.join(" · ")}`;
   if (e.speakerNames.length) {
     block += `\n🎤 ${htmlEscape(e.speakerNames.slice(0, 3).join(", "))}`;

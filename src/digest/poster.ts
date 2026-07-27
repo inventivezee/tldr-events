@@ -66,10 +66,18 @@ export async function runDigestPoster(opts?: {
 
 async function dueKinds(feed: FeedRow, tz: string, now: Date): Promise<DigestKind[]> {
   const sched = (feed.postSchedule ?? {}) as PostSchedule;
-  const { hour, dow } = localHourAndDow(now, tz);
+  const { hour, minute, dow } = localHourAndDow(now, tz);
   const due: DigestKind[] = [];
 
-  if (sched.daily_hour != null && hour === sched.daily_hour) {
+  // The daily gather runs at the top of the same hour (ingest → dedup → research
+  // → score), so hold the post until that chain has had time to finish.
+  const DAILY_POST_AFTER_MINUTE = Number(process.env.DAILY_POST_AFTER_MINUTE ?? 28);
+
+  if (
+    sched.daily_hour != null &&
+    hour === sched.daily_hour &&
+    minute >= DAILY_POST_AFTER_MINUTE
+  ) {
     // Dedupe against TODAY's local start — not the digest window (which is
     // tomorrow). The digest cron fires every 15 min, so within the scheduled
     // hour this is what stops it posting four times.

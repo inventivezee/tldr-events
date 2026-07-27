@@ -814,6 +814,140 @@ h1 span {
   font-style: normal;
 }
 
+/* --- Multi-source events (listed on Luma AND the host's own site, etc.) ----- */
+
+/* The card is a button (opens the chooser) rather than one big link. */
+.event-card.multi-link {
+  cursor: pointer;
+}
+
+/* Stack the per-source links so each stays directly clickable. */
+.event-action.multi {
+  flex-direction: column;
+  gap: 6px;
+}
+
+.event-action.multi > a {
+  width: 100%;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border: 1px solid var(--line-strong);
+  padding: 0 13px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.event-action.multi > a:hover,
+.event-action.multi > a:focus-visible {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+/* --- Source chooser modal --------------------------------------------------- */
+
+.link-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(8, 8, 13, 0.78);
+  backdrop-filter: blur(3px);
+}
+
+.link-modal {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 22px;
+  background: var(--surface-raised);
+  border: 1px solid var(--line-strong);
+}
+
+.link-modal > small {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--signal-soft);
+}
+
+.link-modal > strong {
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.link-modal-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.link-modal-actions > a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.link-modal-actions > a:hover,
+.link-modal-actions > a:focus-visible {
+  border-color: var(--signal);
+  background: var(--signal);
+  color: var(--signal-ink);
+}
+
+.link-modal-actions i {
+  font-style: normal;
+}
+
+.link-modal-close {
+  align-self: flex-end;
+  margin-top: 2px;
+  padding: 6px 4px;
+  background: none;
+  border: none;
+  color: var(--quiet);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.link-modal-close:hover {
+  color: var(--text);
+}
+
 .empty-state {
   min-height: 220px;
   display: grid;

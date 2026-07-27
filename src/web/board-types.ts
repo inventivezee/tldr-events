@@ -17,8 +17,16 @@ export interface BoardEvent {
   guestCount: number | null;
   notables: string[];
   tldr: string | null;
-  source: string; // e.g. "Luma"
-  clickUrl: string;
+  source: string; // e.g. "Luma" — label of the primary link
+  clickUrl: string; // primary destination (click-tracked)
+  /** Every distinct destination. Length > 1 → the card offers a choice
+   *  (e.g. a Luma registration page AND the host's own site). */
+  links: BoardEventLink[];
+}
+
+export interface BoardEventLink {
+  label: string; // e.g. "Luma", "Official site"
+  clickUrl: string; // click-tracked path
 }
 
 export interface HorizonMeta {

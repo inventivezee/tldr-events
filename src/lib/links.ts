@@ -22,6 +22,11 @@ export function clickPath(
   eventId: string,
   feedId: string,
   surface: "telegram" | "web",
+  altEventId?: string,
 ): string {
-  return `/api/click?e=${encodeURIComponent(eventId)}&f=${encodeURIComponent(feedId)}&s=${surface}`;
+  // `alt` picks an alternate source link belonging to the SAME canonical event;
+  // /api/click validates it against the canonical group before redirecting.
+  const alt =
+    altEventId && altEventId !== eventId ? `&alt=${encodeURIComponent(altEventId)}` : "";
+  return `/api/click?e=${encodeURIComponent(eventId)}&f=${encodeURIComponent(feedId)}&s=${surface}${alt}`;
 }

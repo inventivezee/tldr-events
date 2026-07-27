@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cronAuthorized } from "@/cron/guard";
+import { dailyRunDue, skippedResponse } from "@/cron/window";
 import { withJobLock, LOCK_TTL } from "@/db/client";
 import { runIngestion } from "@/ingestion/runner";
 import { EXTRA_SOURCE_IDS } from "@/seed/data";
@@ -12,6 +13,8 @@ export const maxDuration = 300;
 // so they always get their own time budget.
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ ok: false }, { status: 401 });
+  // Pipeline runs once a day, starting at the local run hour (see cron/window).
+  if (!dailyRunDue(req)) return NextResponse.json(skippedResponse());
   const r = await withJobLock("ingest_extra", LOCK_TTL.ingest, () =>
     runIngestion({ sourceIds: EXTRA_SOURCE_IDS }),
   );

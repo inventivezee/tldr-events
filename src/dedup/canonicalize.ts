@@ -12,6 +12,7 @@ import {
   tokenSetRatio,
   haversineMeters,
 } from "@/lib/text";
+import { urlKeyOf } from "@/lib/event-links";
 import { logger } from "@/lib/logger";
 
 const log = logger("dedup");
@@ -42,23 +43,6 @@ interface Row {
   url: string | null;
   urlKey: string;
   canonicalKey: string;
-}
-
-/** Normalized event URL (host+path) so cross-source rows pointing at the same
- *  event page merge (e.g. Cerebral Valley/Google linking to a Luma event). */
-function urlKeyOf(url: string | null): string {
-  if (!url) return "";
-  try {
-    const u = new URL(url);
-    let host = u.hostname.replace(/^www\./, "").toLowerCase();
-    if (host === "luma.com") host = "lu.ma"; // same platform, two hosts
-    const path = u.pathname.replace(/\/+$/, "").toLowerCase();
-    // Ignore bare domain / listing roots — only real event paths identify an event.
-    if (!path || path.length < 2) return "";
-    return `${host}${path}`;
-  } catch {
-    return "";
-  }
 }
 
 class UnionFind {

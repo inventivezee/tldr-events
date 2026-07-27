@@ -1,11 +1,12 @@
 // Read query shared by Telegram + Web: primary, active, in-region, in-window
 // events whose feed score clears min_score, ordered by time then score.
 // Relevance = score, not category (§11.5). Attaches notable researched people.
-import { and, eq, gte, lte, sql } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import type { PersonRef, Tier } from "@/types";
 import { resolvePeople } from "@/research/speakers";
 import { normalizeName } from "@/lib/text";
+import { buildEventLinks, type EventLink } from "@/lib/event-links";
 import type { UtcWindow } from "@/lib/time";
 
 export interface NotablePerson {
@@ -31,6 +32,9 @@ export interface DeliveryEvent {
   relevant: boolean;
   notable: NotablePerson[];
   speakerNames: string[]; // raw host/speaker names (for the 🎤 line)
+  /** Every distinct destination for this event (primary first). Usually one; a
+   *  deduped cross-source event can have e.g. Luma + the host's own site. */
+  links: EventLink[];
 }
 
 const NOTABLE_MIN_PROMINENCE = 6;
@@ -111,6 +115,34 @@ export async function queryDeliveryEvents(params: {
     )
     .orderBy(schema.events.startsAt, sql`${schema.scores.score} desc`);
 
+  // Alternate source links: every row in the same canonical group (a primary's
+  // canonical_group is its own id). One query for the whole result set.
+  const linksByEvent = new Map<string, EventLink[]>();
+  if (rows.length) {
+    const members = await db
+      .select({
+        id: schema.events.id,
+        url: schema.events.url,
+        isPrimary: schema.events.isPrimary,
+        canonicalGroup: schema.events.canonicalGroup,
+      })
+      .from(schema.events)
+      .where(
+        inArray(
+          schema.events.canonicalGroup,
+          rows.map((r) => r.id),
+        ),
+      );
+    const byGroup = new Map<string, typeof members>();
+    for (const m of members) {
+      if (!m.canonicalGroup) continue;
+      const arr = byGroup.get(m.canonicalGroup) ?? [];
+      arr.push(m);
+      byGroup.set(m.canonicalGroup, arr);
+    }
+    for (const [groupId, ms] of byGroup) linksByEvent.set(groupId, buildEventLinks(ms));
+  }
+
   // Resolve notable people once across the result set.
   const allNames: string[] = [];
   for (const r of rows) {
@@ -171,6 +203,10 @@ export async function queryDeliveryEvents(params: {
       relevant: r.relevant ?? true,
       notable: notable.slice(0, 3),
       speakerNames: speakerNames.slice(0, 4),
+      // Fall back to the row's own URL if dedup hasn't grouped it yet.
+      links:
+        linksByEvent.get(r.id) ??
+        buildEventLinks([{ id: r.id, url: r.url, isPrimary: true }]),
     };
   });
 

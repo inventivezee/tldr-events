@@ -23,6 +23,14 @@ function ev(i: number, tier: Tier, title = `Event ${i}`): DeliveryEvent {
     relevant: true,
     notable: [],
     speakerNames: ["Jane Doe", "John Smith"],
+    links: [
+      {
+        eventId: `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`,
+        url: `https://lu.ma/evt${i}`,
+        label: "Luma",
+        isPrimary: true,
+      },
+    ],
   };
 }
 
@@ -54,5 +62,28 @@ describe("renderDigestMessage", () => {
     const msg = renderDigestMessage(feed, [ev(1, "dont_miss", "A <b>hack</b> & co")], "weekly", TZ);
     expect(msg).toContain("&lt;b&gt;");
     expect(msg).toContain("&amp;");
+  });
+
+  it("uses the category emoji as the bullet instead of a dot", () => {
+    const msg = renderDigestMessage(feed, [ev(1, "dont_miss")], "weekly", TZ);
+    expect(msg).toContain("🤖 <a href="); // ai → 🤖 leads the entry
+    expect(msg).not.toContain("• <a href=");
+  });
+
+  it("offers every source link for a deduped multi-source event", () => {
+    const e = ev(1, "dont_miss", "Agentic AI Summit");
+    e.links = [
+      { eventId: "a", url: "https://lu.ma/agentic-ai-summit", label: "Luma", isPrimary: true },
+      {
+        eventId: "b",
+        url: "https://rdi.berkeley.edu/events/agentic-ai-summit-2026",
+        label: "Official site",
+        isPrimary: false,
+      },
+    ];
+    const msg = renderDigestMessage(feed, [e], "weekly", TZ);
+    // Title links to the primary; the alternate is offered on the meta line.
+    expect(msg).toContain('<a href="https://lu.ma/agentic-ai-summit">Agentic AI Summit</a>');
+    expect(msg).toContain('<a href="https://rdi.berkeley.edu/events/agentic-ai-summit-2026">Official site</a>');
   });
 });

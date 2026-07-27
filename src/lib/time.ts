@@ -151,7 +151,10 @@ export function forwardWindow(now: Date, tz: string, days = 21): UtcWindow {
 }
 
 /** Local hour-of-day (0–23) and ISO weekday (1=Mon..7=Sun) for scheduling. */
-export function localHourAndDow(now: Date, tz: string): { hour: number; dow: number } {
+export function localHourAndDow(
+  now: Date,
+  tz: string,
+): { hour: number; minute: number; dow: number } {
   const local = DateTime.fromJSDate(now, { zone: "utc" }).setZone(tz);
-  return { hour: local.hour, dow: local.weekday };
+  return { hour: local.hour, minute: local.minute, dow: local.weekday };
 }

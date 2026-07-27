@@ -155,25 +155,13 @@ const TIER_TO_BOARD: Record<Tier, BoardTier> = {
   radar: "worth_a_look",
 };
 
-function sourceFromUrl(url: string | null): string {
-  if (!url) return "source";
-  try {
-    const h = new URL(url).hostname.replace(/^www\./, "");
-    if (h.includes("lu.ma") || h.includes("luma")) return "Luma";
-    if (h.includes("eventbrite")) return "Eventbrite";
-    if (h.includes("partiful")) return "Partiful";
-    if (h.includes("supermomos")) return "Supermomos";
-    if (h.includes("cerebralvalley")) return "Cerebral Valley";
-    if (h.includes("meetup")) return "Meetup";
-    const base = h.split(".")[0];
-    return base.charAt(0).toUpperCase() + base.slice(1);
-  } catch {
-    return "source";
-  }
-}
-
 function toBoardEvent(e: DeliveryEvent, feedId: string): BoardEvent {
   const key = e.categoryTag ?? "other";
+  // One entry per distinct destination; the primary is first.
+  const links = e.links.map((l) => ({
+    label: l.label,
+    clickUrl: clickPath(e.id, feedId, "web", l.eventId),
+  }));
   return {
     id: e.id,
     title: e.title,
@@ -188,8 +176,9 @@ function toBoardEvent(e: DeliveryEvent, feedId: string): BoardEvent {
     guestCount: e.guestCount,
     notables: e.notable.map((n) => (n.company ? `${n.name} · ${n.company}` : n.name)),
     tldr: e.tldr,
-    source: sourceFromUrl(e.url),
-    clickUrl: clickPath(e.id, feedId, "web"),
+    source: links[0]?.label ?? "source",
+    clickUrl: links[0]?.clickUrl ?? clickPath(e.id, feedId, "web"),
+    links,
   };
 }
 

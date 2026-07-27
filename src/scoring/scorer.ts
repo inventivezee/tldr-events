@@ -16,7 +16,9 @@ import { normalizeName } from "@/lib/text";
 import { logger } from "@/lib/logger";
 
 const log = logger("scorer");
-const DEFAULT_BATCH = 25;
+// Scoring now runs with bounded concurrency and only once a day (3 cron slots),
+// so each run takes a bigger bite: 3 × 40 covers a full day's new/changed events.
+const DEFAULT_BATCH = 40;
 
 const SCORE_TOOL: ToolDef = {
   name: "record_score",

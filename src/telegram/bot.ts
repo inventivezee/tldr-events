@@ -8,7 +8,7 @@ import { thisWeekWindow, nextWeekWindow, type UtcWindow } from "@/lib/time";
 import { DateTime } from "luxon";
 import { queryDeliveryEvents } from "@/digest/query";
 import { renderEventsMessage, DIGEST_LEGEND } from "@/digest/render";
-import { sendMessage } from "./api";
+import { sendMessage, htmlEscape } from "./api";
 import { runDigestPoster } from "@/digest/poster";
 import { allowedChatIds } from "@/config/env";
 import { logger } from "@/lib/logger";
@@ -22,12 +22,28 @@ interface TgUpdate {
 
 const HELP =
   "👋 <b>TLDR Events</b> — the best Bay Area events for founders &amp; investors.\n\n" +
-  "Commands:\n" +
-  "/today — today's picks\n" +
-  "/tomorrow — tomorrow's picks\n" +
-  "/week — this week (through Sunday)\n" +
-  "/nextweek — next week (Mon–Sun)\n\n" +
+  "Commands (slash optional — just type the letter):\n" +
+  "<b>t</b> or /today — today's picks\n" +
+  "<b>tmr</b> or /tomorrow — tomorrow's picks\n" +
+  "<b>w</b> or /week — this week (through Sunday)\n" +
+  "<b>nw</b> or /nextweek — next week (Mon–Sun)\n\n" +
   "Curated, scored, and summarized. Skip the firehose.";
+
+/** Bare-word shortcuts, so members can type "t" instead of "/today".
+ *  NOTE: for these to reach the bot in a GROUP, group privacy must be disabled
+ *  for the bot in @BotFather (/setprivacy → Disable); otherwise Telegram only
+ *  delivers messages that start with "/" or @mention the bot. */
+const SHORTCUTS: Record<string, string> = {
+  t: "/today",
+  today: "/today",
+  tmr: "/tomorrow",
+  tm: "/tomorrow",
+  tomorrow: "/tomorrow",
+  w: "/week",
+  week: "/week",
+  nw: "/nextweek",
+  nextweek: "/nextweek",
+};
 
 export async function handleUpdate(update: TgUpdate): Promise<void> {
   const msg = update.message ?? update.channel_post;
@@ -36,7 +52,12 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
   const fromId = (update.message?.from?.id ?? chatId) as number;
   const text = msg.text.trim();
   // Normalize "/today@BotName" → "/today".
-  const cmd = text.split(/\s+/)[0].replace(/@.*$/, "").toLowerCase();
+  const first = text.split(/\s+/)[0].replace(/@.*$/, "").toLowerCase();
+  // A bare word is only a shortcut when it's the WHOLE message ("t", "tmr"), so
+  // normal chat that happens to start with "w" doesn't trigger a digest.
+  const isSingleWord = !/\s/.test(text);
+  const cmd =
+    !first.startsWith("/") && isSingleWord && SHORTCUTS[first] ? SHORTCUTS[first] : first;
 
   const db = getDb();
   const [feed] = await db
@@ -64,6 +85,30 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
     case "/nextweek":
       await respond(chatId, feed, tz, nextWeekWindow(new Date(), tz), "🗓️ <b>Next Week</b>");
       return;
+    // Bind the scheduled digests to THIS chat (admin only). Lets the bot be
+    // moved to a new group without redeploying: it captures the group's id and
+    // every future scheduled digest posts here instead of the old chat.
+    case "/usehere":
+    case "/posthere": {
+      const allow = allowedChatIds();
+      if (!allow.includes(fromId)) {
+        await sendMessage(chatId, "Not authorized.");
+        return;
+      }
+      const previous = feed.telegramChannelId ?? process.env.TELEGRAM_CHANNEL_ID ?? "(none)";
+      await db
+        .update(schema.feeds)
+        .set({ telegramChannelId: String(chatId) })
+        .where(eq(schema.feeds.id, feed.id));
+      log.info(`feed ${feed.id} digest target → ${chatId} (was ${previous})`);
+      await sendMessage(
+        chatId,
+        `✅ Daily + weekly digests will post <b>here</b> from now on.\n\n` +
+          `Chat ID: <code>${chatId}</code>\nPrevious: <code>${htmlEscape(String(previous))}</code>\n\n` +
+          `Daily digest: 5:00 PM PT with tomorrow's events.`,
+      );
+      return;
+    }
     // Admin/test commands (gated).
     case "/post_daily":
     case "/post_weekly": {
