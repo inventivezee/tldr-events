@@ -61,19 +61,32 @@ export function collectMaxCount(obj: any): number | null {
   return found ? max : null;
 }
 
-/** Fetch a single event's detail (attendance + real hosts/featured guests).
- *  `idOrSlug` may be a Luma api_id OR a public URL slug/short-code. */
-export async function fetchLumaDetail(
-  idOrSlug: string,
-): Promise<{ guestCount: number | null; hosts: PersonRef[]; speakers: PersonRef[] } | null> {
+/** Fetch a single event's detail (attendance + real hosts/featured guests + the
+ *  exact start/end instants). `idOrSlug` may be a Luma api_id OR a public URL
+ *  slug/short-code. */
+export async function fetchLumaDetail(idOrSlug: string): Promise<{
+  guestCount: number | null;
+  hosts: PersonRef[];
+  speakers: PersonRef[];
+  startsAt: Date | null;
+  endsAt: Date | null;
+} | null> {
   try {
     const d = await getJson(
       `${BASE}/event/get?event_api_id=${encodeURIComponent(idOrSlug)}`,
     );
+    const ev = d?.event ?? d;
+    const when = (v: unknown): Date | null => {
+      if (typeof v !== "string") return null;
+      const t = new Date(v);
+      return Number.isNaN(t.getTime()) ? null : t;
+    };
     return {
       guestCount: collectMaxCount(d),
       hosts: personRefs(d.hosts),
       speakers: personRefs(d.featured_guests),
+      startsAt: when(ev?.start_at),
+      endsAt: when(ev?.end_at),
     };
   } catch {
     return null; // fail-soft: keep whatever data we already have
@@ -113,12 +126,23 @@ export async function enrichLumaEvents(
 ): Promise<number> {
   let enriched = 0;
   await pool(events, concurrency, async (ev) => {
-    if (ev.guest_count != null && ev.guest_count > 0) return; // already have it
+    // Worth a lookup if attendance is missing OR the listing only gave a date
+    // (midnight local ⇒ no time was published on the aggregator card).
+    const needsCount = ev.guest_count == null || ev.guest_count === 0;
+    const needsTime = isDateOnly(ev.starts_at);
+    if (!needsCount && !needsTime) return;
     const slug = lumaSlugFromUrl(ev.url);
     if (!slug) return;
     const d = await fetchLumaDetail(slug);
     if (!d) return;
     let touched = false;
+    // Only override a date-only placeholder — never second-guess a real time
+    // that the source actually published.
+    if (needsTime && d.startsAt) {
+      ev.starts_at = d.startsAt;
+      if (d.endsAt) ev.ends_at = d.endsAt;
+      touched = true;
+    }
     if (d.guestCount != null && d.guestCount > (ev.guest_count ?? 0)) {
       ev.guest_count = d.guestCount;
       touched = true;
@@ -134,6 +158,21 @@ export async function enrichLumaEvents(
     if (touched) enriched++;
   });
   return enriched;
+}
+
+/** True when a timestamp is exactly local midnight — i.e. the source gave a date
+ *  with no time, so the "00:00" is a placeholder rather than a real start. */
+function isDateOnly(d: Date | null | undefined, tz = "America/Los_Angeles"): boolean {
+  if (!d) return false;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(d);
+  const h = parts.find((p) => p.type === "hour")?.value;
+  const m = parts.find((p) => p.type === "minute")?.value;
+  return (h === "00" || h === "24") && m === "00";
 }
 
 /** Run `fn` over items with bounded concurrency. */

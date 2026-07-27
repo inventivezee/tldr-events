@@ -94,6 +94,18 @@ export const SEED_SOURCES: SeedSource[] = [
     config: { url: "https://partiful.com/explore/sf" },
   },
   {
+    // Aggregator: mostly relists Luma/Partiful/etc. and links to the ORIGINAL
+    // event page, so those rows merge into ours via URL dedup. Low priority
+    // (55) keeps the first-party source authoritative for a merged event; the
+    // unique contribution is Evion-hosted events and the long-tail platforms.
+    id: "evion_sf",
+    name: "Evion",
+    kind: "browser",
+    region_id: "sf_bay",
+    priority: 55,
+    config: { url: "https://evion.app/events/" },
+  },
+  {
     id: "google_sf",
     name: "Google Search",
     kind: "browser",
@@ -117,7 +129,7 @@ export const SEED_SOURCES: SeedSource[] = [
 
 // Supplementary sources split into their own cron slot so the slower/long-tail
 // scrapes (Partiful, Google) don't get starved by the core sources' time budget.
-export const EXTRA_SOURCE_IDS = ["partiful_sf", "google_sf"];
+export const EXTRA_SOURCE_IDS = ["partiful_sf", "google_sf", "evion_sf"];
 
 export const FEED_ID = "bay_founder";
 
