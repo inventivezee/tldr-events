@@ -6,7 +6,7 @@ import { getDb, schema, sqlClient } from "../src/db/client";
 import { eq } from "drizzle-orm";
 import { queryDeliveryEvents } from "../src/digest/query";
 import { renderDigestMessage } from "../src/digest/render";
-import { dailyWindow, weeklyWindow } from "../src/lib/time";
+import { dayWindow, weeklyWindow } from "../src/lib/time";
 
 async function main() {
   const kind = process.argv.includes("daily") ? "daily" : "weekly";
@@ -16,7 +16,8 @@ async function main() {
   const [region] = await db.select().from(schema.regions).where(eq(schema.regions.id, feed.regionId ?? "sf_bay")).limit(1);
   const tz = region?.timezone ?? "America/Los_Angeles";
   const now = new Date();
-  const window = kind === "daily" ? dailyWindow(now, tz) : weeklyWindow(now, tz);
+  // Daily = tomorrow only (matches the 5pm evening digest).
+  const window = kind === "daily" ? dayWindow(now, tz, 1) : weeklyWindow(now, tz);
   const events = await queryDeliveryEvents({
     feedId: feed.id,
     regionId: feed.regionId ?? "sf_bay",

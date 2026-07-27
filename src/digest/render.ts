@@ -55,13 +55,13 @@ function fmtWhen(utc: Date, tz: string): string {
 function eventBlock(e: DeliveryEvent, tz: string): string {
   const title = htmlEscape(truncate(e.title, 90));
   const link = e.url ? `<a href="${urlAttr(e.url)}">${title}</a>` : title;
-  const emoji = CAT_EMOJI[e.categoryTag ?? ""] ?? "";
+  // The category emoji IS the bullet (falls back to • when there's no category).
+  const bullet = CAT_EMOJI[e.categoryTag ?? ""] ?? "•";
   const parts = [fmtWhen(e.startsAt, tz)];
   // Only show attendance when we actually have it — a null/0 count is "unknown",
   // not "zero people", and a fabricated "👥 0" reads as a dead event.
   if (e.guestCount != null && e.guestCount > 0) parts.push(`👥 ${e.guestCount}`);
-  if (emoji) parts.push(emoji);
-  let block = `• ${link}\n${parts.join(" · ")}`;
+  let block = `${bullet} ${link}\n${parts.join(" · ")}`;
   if (e.speakerNames.length) {
     block += `\n🎤 ${htmlEscape(e.speakerNames.slice(0, 3).join(", "))}`;
   }
@@ -106,7 +106,11 @@ function digestHeader(feed: FeedRow, events: DeliveryEvent[], kind: DigestKind, 
   const legend = DIGEST_LEGEND;
   const count = events.length;
   if (kind === "daily") {
-    return `☀️ <b>Bay Area Events — Today &amp; Tomorrow</b>\n📊 ${count} curated events | ${legend}`;
+    // Evening digest for the NEXT day — label it with tomorrow's actual date.
+    const day = events.length
+      ? DateTime.fromJSDate(events[0].startsAt, { zone: "utc" }).setZone(tz)
+      : DateTime.now().setZone(tz).plus({ days: 1 });
+    return `☀️ <b>Bay Area Events — Tomorrow, ${day.toFormat("ccc LLL d")}</b>\n📊 ${count} curated events | ${legend}`;
   }
   let range = "";
   if (events.length) {

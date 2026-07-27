@@ -6,7 +6,7 @@ import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import type { FeedRow } from "@/db/schema";
 import type { DigestKind, PostSchedule } from "@/types";
-import { dailyWindow, weeklyWindow, localHourAndDow, type UtcWindow } from "@/lib/time";
+import { dayWindow, weeklyWindow, localHourAndDow, type UtcWindow } from "@/lib/time";
 import { queryDeliveryEvents } from "./query";
 import { renderDigestMessage } from "./render";
 import { sendMessage, telegramConfigured } from "@/telegram/api";
@@ -70,7 +70,10 @@ async function dueKinds(feed: FeedRow, tz: string, now: Date): Promise<DigestKin
   const due: DigestKind[] = [];
 
   if (sched.daily_hour != null && hour === sched.daily_hour) {
-    const start = dailyWindow(now, tz).start;
+    // Dedupe against TODAY's local start — not the digest window (which is
+    // tomorrow). The digest cron fires every 15 min, so within the scheduled
+    // hour this is what stops it posting four times.
+    const start = dayWindow(now, tz, 0).start;
     if (!(await postedSince(feed.id, "daily", start))) due.push("daily");
   }
   if (
@@ -115,7 +118,9 @@ async function postOne(
   forced = false,
 ): Promise<PosterResult> {
   const db = getDb();
-  const window: UtcWindow = kind === "daily" ? dailyWindow(now, tz) : weeklyWindow(now, tz);
+  // Daily digest posts in the evening and covers TOMORROW only (dayWindow +1).
+  const window: UtcWindow =
+    kind === "daily" ? dayWindow(now, tz, 1) : weeklyWindow(now, tz);
 
   const events = await queryDeliveryEvents({
     feedId: feed.id,

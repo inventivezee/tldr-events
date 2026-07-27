@@ -298,9 +298,22 @@ function venueNearby(a: Row, b: Row): boolean {
   if (haveCoords) return geoClose;
   // No venue names and no coords: fall back to same city (last resort; the
   // title match must still clear the fuzzy threshold to actually merge).
+  // Sources describe the same place at different granularity ("Berkeley" vs
+  // "UC Berkeley Campus"), so accept one city string containing the other.
   const ca = normalizeText(a.city);
   const cb = normalizeText(b.city);
-  return !!(ca && cb && ca === cb);
+  return !!(ca && cb && cityMatches(ca, cb));
+}
+
+/** Same city, tolerant of granularity: equal, or one token set inside the other. */
+function cityMatches(ca: string, cb: string): boolean {
+  if (ca === cb) return true;
+  const ta = new Set(ca.split(" ").filter(Boolean));
+  const tb = new Set(cb.split(" ").filter(Boolean));
+  if (!ta.size || !tb.size) return false;
+  const [small, large] = ta.size <= tb.size ? [ta, tb] : [tb, ta];
+  for (const t of small) if (!large.has(t)) return false;
+  return true;
 }
 
 function enrichPrimary(primary: Row, members: Row[]) {

@@ -30,6 +30,11 @@ function tokenSet(s: string): Set<string> {
 
 const TOKEN_MATCH = 85; // two tokens count as "the same" above this ratio
 const CONTAINMENT_FLOOR = 60; // min overall sort-ratio before a subset match is trusted
+// A 2-token title is too generic for containment alone: "Builders Night" is a
+// subset of "Agentic Builders Night", and "Demo Day" of "YC Demo Day", but those
+// are different events. Require ≥3 tokens in the smaller title before a subset
+// match counts (an identical short title still matches on sortRatio alone).
+const MIN_CONTAINMENT_TOKENS = 3;
 
 /**
  * Token-set ratio in [0,100], robust to word order, extra qualifiers, and
@@ -57,9 +62,13 @@ export function tokenSetRatio(a: string, b: string): number {
 
   // Containment alone (100 whenever the smaller title is a subset) over-merges a
   // short/generic title into an unrelated longer one. Only trust it when the two
-  // titles are also reasonably similar OVERALL (sort ratio floor) — i.e. the
-  // larger title adds only a few qualifier tokens, not a whole different subject.
-  const containmentTrusted = sortRatio >= CONTAINMENT_FLOOR ? containment : 0;
+  // titles are also reasonably similar OVERALL (sort ratio floor) AND the smaller
+  // title is specific enough to identify an event — i.e. the larger title adds
+  // only a few qualifier tokens, not a whole different subject.
+  const containmentTrusted =
+    sortRatio >= CONTAINMENT_FLOOR && small.length >= MIN_CONTAINMENT_TOKENS
+      ? containment
+      : 0;
 
   return Math.round(Math.max(sortRatio, containmentTrusted));
 }

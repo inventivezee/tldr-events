@@ -135,5 +135,6 @@ export const SEED_FEED = {
   source_ids: SEED_SOURCES.map((s) => s.id),
   curator: "founding_curator",
   min_score: "6.0",
-  post_schedule: { daily_hour: 7, weekly_dow: 7, weekly_hour: 18 },
+  // Daily digest posts at 17:00 local and covers TOMORROW's events.
+  post_schedule: { daily_hour: 17, weekly_dow: 7, weekly_hour: 18 },
 };

@@ -4,7 +4,7 @@ import {
   parseLoose,
   fmtLocalTime,
   startLocalDate,
-  dailyWindow,
+  dayWindow,
   weeklyWindow,
   thisWeekWindow,
   nextWeekWindow,
@@ -54,13 +54,15 @@ describe("startLocalDate", () => {
 });
 
 describe("windows", () => {
-  it("daily window spans ~2 local days", () => {
-    const now = new Date("2026-07-22T20:00:00Z");
-    const w = dailyWindow(now, PT);
-    expect(w.end.getTime()).toBeGreaterThan(w.start.getTime());
+  it("daily digest window is tomorrow only (one local day)", () => {
+    // The 5pm digest covers the NEXT day: dayWindow(now, tz, +1).
+    const now = new Date("2026-07-22T20:00:00Z"); // 13:00 PT on Jul 22
+    const w = dayWindow(now, PT, 1);
+    expect(startLocalDate(w.start, PT)).toBe("2026-07-23");
+    expect(startLocalDate(w.end, PT)).toBe("2026-07-23");
     const days = (w.end.getTime() - w.start.getTime()) / 86400000;
-    expect(days).toBeGreaterThan(1.5);
-    expect(days).toBeLessThan(2.1);
+    expect(days).toBeGreaterThan(0.9);
+    expect(days).toBeLessThan(1.05);
   });
   it("weekly window spans ~7 local days (today..+6, no overlap with next week)", () => {
     const now = new Date("2026-07-22T20:00:00Z");
