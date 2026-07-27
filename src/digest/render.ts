@@ -12,13 +12,17 @@ import { siteUrl } from "@/lib/links";
 const MAX_CHARS = 3950; // safety margin under Telegram's 4096
 
 /** Category legend shown in every digest header (scheduled + on-demand bot). */
-export const DIGEST_LEGEND = "🤖 AI · 🧬 Longevity · 🔒 Web3 · 🌟 Founders · 🛠️ Hackathon";
+export const DIGEST_LEGEND = "🤖 AI · 🧬 Longevity · ₿ Web3 · 🐰 Founders · 🛠️ Hackathon";
 
+// One icon per niche — also used as the bullet leading each event.
+// NOTE: these must be standard Unicode. Telegram only permits CUSTOM emoji
+// (<tg-emoji emoji-id="…">) from bots that have purchased a username on
+// Fragment, so a bespoke icon isn't available to this bot.
 const CAT_EMOJI: Record<string, string> = {
   ai: "🤖",
   longevity: "🧬",
-  fintech_blockchain: "🔒",
-  founder_investor: "🌟",
+  fintech_blockchain: "₿", // U+20BF BITCOIN SIGN — a text glyph, not a color emoji
+  founder_investor: "🐰",
   hackathon: "🛠️",
 };
 
