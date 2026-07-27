@@ -13,7 +13,7 @@ const MAX_CHARS = 3950; // safety margin under Telegram's 4096
 
 /** Category legend shown in every digest header (scheduled + on-demand bot). */
 export const DIGEST_LEGEND =
-  "🤖 AI · 🧬 Longevity · ₿ Web3 · 🧑‍💼 Founders · 🛠️ Hackathon · 🎤 who's speaking";
+  "🤖 AI · 🧬 Longevity · ₿ Web3 · 🧑‍💼 Founders · 🛠️ Hackathon · 🎤 Who's speaking";
 
 // One icon per niche — also used as the bullet leading each event.
 // NOTE: these must be standard Unicode. Telegram only permits CUSTOM emoji
