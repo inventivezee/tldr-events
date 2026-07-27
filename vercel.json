@@ -1,16 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "_comment": [
-    "The gather->post chain runs ONCE a day, kicked off at 17:00 America/Los_Angeles",
-    "so the 5pm digest previews tomorrow with freshly-gathered data.",
-    "Vercel Cron is UTC-only, and 17:00 PT is 00:00 UTC under PDT / 01:00 UTC under PST,",
-    "so each stage fires at BOTH hours and src/cron/window.ts lets only the one that is",
-    "actually 17:00 local proceed (the other returns immediately without working).",
-    "Local timeline: :00 ingest (core + extra in parallel) -> :06 dedup + luma backfill",
-    "-> :10 research -> :14/:19/:24 score (batched) -> :30 digest posts.",
-    "The digest cron stays frequent because it also serves the Sunday 18:00 weekly; the",
-    "daily post is held until minute >= 28 (DAILY_POST_AFTER_MINUTE) so the chain lands."
-  ],
   "crons": [
     { "path": "/api/cron/ingest", "schedule": "0 0,1 * * *" },
     { "path": "/api/cron/ingest-extra", "schedule": "0 0,1 * * *" },
