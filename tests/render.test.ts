@@ -42,7 +42,7 @@ describe("renderDigestMessage", () => {
     expect(msg).toContain('href="https://lu.ma/evt2"'); // direct source link
     expect(msg).not.toContain("/api/click"); // not the redirect
     expect(msg).not.toContain("SUMMARY-SHOULD-NOT-APPEAR"); // no TL;DR line
-    expect(msg).toContain("🎤 Jane Doe");
+    expect(msg).toContain("Jane Doe, John Smith 🎤"); // mic trails the names
     expect(msg.length).toBeLessThanOrEqual(4096);
   });
 

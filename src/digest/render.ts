@@ -12,7 +12,8 @@ import { siteUrl } from "@/lib/links";
 const MAX_CHARS = 3950; // safety margin under Telegram's 4096
 
 /** Category legend shown in every digest header (scheduled + on-demand bot). */
-export const DIGEST_LEGEND = "🤖 AI · 🧬 Longevity · ₿ Web3 · 🐰 Founders · 🛠️ Hackathon";
+export const DIGEST_LEGEND =
+  "🤖 AI · 🧬 Longevity · ₿ Web3 · 🧑‍💼 Founders · 🛠️ Hackathon · 🎤 who's speaking";
 
 // One icon per niche — also used as the bullet leading each event.
 // NOTE: these must be standard Unicode. Telegram only permits CUSTOM emoji
@@ -22,7 +23,7 @@ const CAT_EMOJI: Record<string, string> = {
   ai: "🤖",
   longevity: "🧬",
   fintech_blockchain: "₿", // U+20BF BITCOIN SIGN — a text glyph, not a color emoji
-  founder_investor: "🐰",
+  founder_investor: "🧑‍💼",
   hackathon: "🛠️",
 };
 
@@ -73,7 +74,8 @@ function eventBlock(e: DeliveryEvent, tz: string): string {
   }
   let block = `${bullet} ${link}\n${parts.join(" · ")}`;
   if (e.speakerNames.length) {
-    block += `\n🎤 ${htmlEscape(e.speakerNames.slice(0, 3).join(", "))}`;
+    // Mic trails the names (see the legend: 🎤 = who's speaking).
+    block += `\n${htmlEscape(e.speakerNames.slice(0, 3).join(", "))} 🎤`;
   }
   return block;
 }
