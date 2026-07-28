@@ -64,34 +64,41 @@ export async function runDigestPoster(opts?: {
   return out;
 }
 
+// Post at the scheduled time, but keep trying for a few hours if that exact tick
+// never arrives. Cron delivery is not guaranteed to the minute — on 2026-07-27 no
+// digest tick landed inside the scheduled hour at all and the day was silently
+// skipped. Treating the schedule as "due from T onwards" instead of "due only at
+// T" means a missed tick delays the post rather than losing it. `postedSince` is
+// what prevents a repeat, so a wider window cannot cause a double post.
+const CATCH_UP_HOURS = Number(process.env.DIGEST_CATCH_UP_HOURS ?? 4);
+
 async function dueKinds(feed: FeedRow, tz: string, now: Date): Promise<DigestKind[]> {
   const sched = (feed.postSchedule ?? {}) as PostSchedule;
   const { hour, minute, dow } = localHourAndDow(now, tz);
   const due: DigestKind[] = [];
+  const nowMinutes = hour * 60 + minute;
 
-  // The daily gather runs at the top of the same hour (ingest → dedup → research
-  // → score), so hold the post until that chain has had time to finish.
+  // The daily gather finishes shortly before this, so hold the post until the
+  // chain has had time to land (see cron/window.ts for the stage timeline).
   const DAILY_POST_AFTER_MINUTE = Number(process.env.DAILY_POST_AFTER_MINUTE ?? 28);
 
-  if (
-    sched.daily_hour != null &&
-    hour === sched.daily_hour &&
-    minute >= DAILY_POST_AFTER_MINUTE
-  ) {
-    // Dedupe against TODAY's local start — not the digest window (which is
-    // tomorrow). The digest cron fires every 15 min, so within the scheduled
-    // hour this is what stops it posting four times.
-    const start = dayWindow(now, tz, 0).start;
-    if (!(await postedSince(feed.id, "daily", start))) due.push("daily");
+  if (sched.daily_hour != null) {
+    const from = sched.daily_hour * 60 + DAILY_POST_AFTER_MINUTE;
+    // Clamp to the end of the local day: past midnight the "already posted today"
+    // check refers to a different day, so catching up there would double-post.
+    const until = Math.min(from + CATCH_UP_HOURS * 60, 24 * 60 - 1);
+    if (nowMinutes >= from && nowMinutes <= until) {
+      const start = dayWindow(now, tz, 0).start;
+      if (!(await postedSince(feed.id, "daily", start))) due.push("daily");
+    }
   }
-  if (
-    sched.weekly_dow != null &&
-    sched.weekly_hour != null &&
-    dow === sched.weekly_dow &&
-    hour === sched.weekly_hour
-  ) {
-    const sixDaysAgo = new Date(now.getTime() - 6 * 86400000);
-    if (!(await postedSince(feed.id, "weekly", sixDaysAgo))) due.push("weekly");
+  if (sched.weekly_dow != null && sched.weekly_hour != null && dow === sched.weekly_dow) {
+    const from = sched.weekly_hour * 60;
+    const until = Math.min(from + CATCH_UP_HOURS * 60, 24 * 60 - 1);
+    if (nowMinutes >= from && nowMinutes <= until) {
+      const sixDaysAgo = new Date(now.getTime() - 6 * 86400000);
+      if (!(await postedSince(feed.id, "weekly", sixDaysAgo))) due.push("weekly");
+    }
   }
   return due;
 }
