@@ -57,6 +57,25 @@ function fmtWhen(utc: Date, tz: string): string {
   return `${date} ${time}`;
 }
 
+/** Short place label for the meta line — "San Francisco", "Palo Alto".
+ *
+ *  Sources write the city at wildly different granularity ("San Francisco, CA",
+ *  "Stanford University, Stanford, California", "SF Bay Area"), and the digest
+ *  only needs the town so a reader can tell an SF event from a Peninsula one.
+ *  Falls back to the venue when no city was captured. */
+function shortLocation(e: DeliveryEvent): string | null {
+  const raw = (e.city ?? e.venueName ?? "").trim();
+  if (!raw) return null;
+  // Drop a trailing state/country, then keep the last remaining segment, which
+  // is the town ("Stanford University, Stanford" → "Stanford").
+  const withoutState = raw.replace(/,\s*(california|ca|usa|united states)\.?\s*$/i, "").trim();
+  const parts = withoutState.split(",").map((p) => p.trim()).filter(Boolean);
+  let city = parts.length ? parts[parts.length - 1] : withoutState;
+  if (/^sf$/i.test(city)) city = "San Francisco";
+  if (!city) return null;
+  return truncate(city, 24);
+}
+
 function eventBlock(e: DeliveryEvent, tz: string): string {
   const title = htmlEscape(truncate(e.title, 90));
   const primary = e.links[0]?.url ?? e.url;
@@ -64,6 +83,9 @@ function eventBlock(e: DeliveryEvent, tz: string): string {
   // The category emoji IS the bullet (falls back to • when there's no category).
   const bullet = CAT_EMOJI[e.categoryTag ?? ""] ?? "•";
   const parts = [fmtWhen(e.startsAt, tz)];
+  // Where it is — readers can't tell an SF event from a Palo Alto one otherwise.
+  const where = shortLocation(e);
+  if (where) parts.push(`📍 ${htmlEscape(where)}`);
   // Only show attendance when we actually have it — a null/0 count is "unknown",
   // not "zero people", and a fabricated "👥 0" reads as a dead event.
   if (e.guestCount != null && e.guestCount > 0) parts.push(`👥 ${e.guestCount}`);

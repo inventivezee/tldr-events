@@ -64,6 +64,29 @@ describe("renderDigestMessage", () => {
     expect(msg).toContain("&amp;");
   });
 
+  it("shows the town, normalising however the source wrote it", () => {
+    const check = (city: string | null, venue: string | null, expected: string) => {
+      const e = ev(1, "dont_miss");
+      e.city = city;
+      e.venueName = venue;
+      const msg = renderDigestMessage(feed, [e], "weekly", TZ);
+      expect(msg, `city=${city} venue=${venue}`).toContain(`📍 ${expected}`);
+    };
+    check("San Francisco, California", "X", "San Francisco");
+    check("San Francisco, CA", "X", "San Francisco");
+    check("Palo Alto, California", "X", "Palo Alto");
+    check("Stanford University, Stanford, California", "X", "Stanford");
+    check("SF Bay Area", "X", "SF Bay Area");
+    check(null, "Frontier Tower", "Frontier Tower"); // falls back to the venue
+  });
+
+  it("omits the location chip when neither city nor venue is known", () => {
+    const e = ev(1, "dont_miss");
+    e.city = null;
+    e.venueName = null;
+    expect(renderDigestMessage(feed, [e], "weekly", TZ)).not.toContain("📍");
+  });
+
   it("uses the category emoji as the bullet instead of a dot", () => {
     const msg = renderDigestMessage(feed, [ev(1, "dont_miss")], "weekly", TZ);
     expect(msg).toContain("🤖 <a href="); // ai → 🤖 leads the entry
