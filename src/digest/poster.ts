@@ -108,13 +108,21 @@ async function postedSince(feedId: string, kind: DigestKind, cutoff: Date): Prom
   // Count anything that emitted ≥1 message ('sent' or 'partial') as "done for this
   // period", so a partial send is never re-sent from scratch (no duplicate posts).
   // A total failure ('failed', 0 messages sent) is NOT counted → safe to retry.
+  //
+  // A FORCED post ('<kind>_manual') counts too. It is still a real digest landing
+  // in the real chat, so letting the scheduler post again on top of it duplicates
+  // the message to readers — which is exactly what happened on 2026-07-27, when a
+  // manual send at 19:34 was followed by the scheduled one at 20:00. Keeping the
+  // audit kinds distinct but treating both as "already posted" errs toward the
+  // recoverable failure: a skipped post can be re-sent, a double post can't be
+  // unsent.
   const [row] = await db
     .select({ id: schema.digestPosts.id })
     .from(schema.digestPosts)
     .where(
       and(
         eq(schema.digestPosts.feedId, feedId),
-        eq(schema.digestPosts.kind, kind),
+        inArray(schema.digestPosts.kind, [kind, `${kind}_manual`]),
         inArray(schema.digestPosts.status, ["sent", "partial"]),
         gte(schema.digestPosts.postedAt, cutoff),
       ),

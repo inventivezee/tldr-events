@@ -80,8 +80,15 @@ function eventBlock(e: DeliveryEvent, tz: string): string {
   return block;
 }
 
-/** Compact one-message renderer shared by scheduled digests + the on-demand bot. */
-export function renderEventsMessage(header: string, events: DeliveryEvent[], tz: string): string {
+/** Compact one-message renderer shared by scheduled digests + the on-demand bot.
+ *  `totalCount` is how many events matched before any trimming, so the footer can
+ *  point at the rest on the web. */
+export function renderEventsMessage(
+  header: string,
+  events: DeliveryEvent[],
+  tz: string,
+  totalCount = events.length,
+): string {
   const out: string[] = [header];
   let len = header.length;
   let shown = 0;
@@ -97,8 +104,7 @@ export function renderEventsMessage(header: string, events: DeliveryEvent[], tz:
       const block = eventBlock(e, tz);
       const add = (sectionOpen ? 0 : SECTION[tier].length + 2) + block.length + 1;
       if (len + add > MAX_CHARS) {
-        const remaining = events.length - shown;
-        out.push(`\n… +${remaining} more at ${siteUrl()}`);
+        out.push(`\n… +${totalCount - shown} more at ${siteUrl()}`);
         return out.join("\n");
       }
       if (!sectionOpen) {
@@ -111,12 +117,37 @@ export function renderEventsMessage(header: string, events: DeliveryEvent[], tz:
       shown++;
     }
   }
+  if (totalCount > shown) out.push(`\n… +${totalCount - shown} more at ${siteUrl()}`);
   return out.join("\n");
 }
 
-function digestHeader(feed: FeedRow, events: DeliveryEvent[], kind: DigestKind, tz: string): string {
+/** Keep every top-tier event, drop most of the tail.
+ *
+ *  The daily digest is a scan-in-ten-seconds evening note, not the full board:
+ *  an unabridged list ran ~22 events and filled the whole message. Must Attend
+ *  is never trimmed — those are the reason to read it — while the lower tiers
+ *  keep only their best few, ranked by score, and the footer links to the rest. */
+export function trimForDaily(
+  events: DeliveryEvent[],
+  keepRatio = Number(process.env.DAILY_LOWER_TIER_KEEP ?? 0.4),
+): DeliveryEvent[] {
+  const top = events.filter((e) => e.tier === "dont_miss");
+  const rest = events
+    .filter((e) => e.tier !== "dont_miss")
+    .sort((a, b) => b.score - a.score || a.startsAt.getTime() - b.startsAt.getTime());
+  // At least one lower-tier pick survives, so a quiet day isn't only Must Attend.
+  const keep = rest.length ? Math.max(1, Math.floor(rest.length * keepRatio)) : 0;
+  return [...top, ...rest.slice(0, keep)];
+}
+
+function digestHeader(
+  feed: FeedRow,
+  events: DeliveryEvent[],
+  kind: DigestKind,
+  tz: string,
+  count = events.length,
+): string {
   const legend = DIGEST_LEGEND;
-  const count = events.length;
   if (kind === "daily") {
     // Evening digest for the NEXT day — label it with tomorrow's actual date.
     const day = events.length
@@ -146,9 +177,18 @@ export function renderDigestMessage(
   if (events.length === 0) {
     return kind === "weekly" ? quietWeekMessage() : "";
   }
+  // The daily is a short evening note: all of Must Attend, only the best of the
+  // rest. The weekly stays the full board.
+  const shown = kind === "daily" ? trimForDaily(events) : events;
   // Sort by start time for the header range calc; sections re-sort by score.
-  const byDate = [...events].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
-  return renderEventsMessage(digestHeader(feed, byDate, kind, tz), events, tz);
+  const byDate = [...shown].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  // Header counts the whole day; the footer points at what didn't fit.
+  return renderEventsMessage(
+    digestHeader(feed, byDate, kind, tz, events.length),
+    shown,
+    tz,
+    events.length,
+  );
 }
 
 export function quietWeekMessage(): string {

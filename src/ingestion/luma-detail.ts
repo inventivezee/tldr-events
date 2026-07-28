@@ -129,7 +129,7 @@ export async function enrichLumaEvents(
     // Worth a lookup if attendance is missing OR the listing only gave a date
     // (midnight local ⇒ no time was published on the aggregator card).
     const needsCount = ev.guest_count == null || ev.guest_count === 0;
-    const needsTime = isDateOnly(ev.starts_at);
+    const needsTime = isPlaceholderTime(ev.starts_at);
     if (!needsCount && !needsTime) return;
     const slug = lumaSlugFromUrl(ev.url);
     if (!slug) return;
@@ -160,10 +160,18 @@ export async function enrichLumaEvents(
   return enriched;
 }
 
-/** True when a timestamp is exactly local midnight — i.e. the source gave a date
- *  with no time, so the "00:00" is a placeholder rather than a real start. */
-function isDateOnly(d: Date | null | undefined, tz = "America/Los_Angeles"): boolean {
+/** True when a timestamp looks like a date with no time attached, so the 00:00 is
+ *  a placeholder rather than a real start.
+ *
+ *  Checks BOTH local and UTC midnight. A listing that publishes only a date can
+ *  land on either, depending on whether the date string was resolved in the
+ *  region's zone or in UTC — and a UTC-midnight placeholder is the nastier case,
+ *  since it reads as 5pm on the PREVIOUS day in Pacific and moves the event to
+ *  the wrong day entirely. Over-matching is harmless here: the only thing we do
+ *  with it is take Luma's authoritative time for a Luma event. */
+export function isPlaceholderTime(d: Date | null | undefined, tz = "America/Los_Angeles"): boolean {
   if (!d) return false;
+  if (d.getUTCHours() === 0 && d.getUTCMinutes() === 0) return true;
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: tz,
     hour: "2-digit",
