@@ -26,7 +26,8 @@ const HELP =
   "<b>t</b> or /today — today's picks\n" +
   "<b>tmr</b> or /tomorrow — tomorrow's picks\n" +
   "<b>w</b> or /week — this week (through Sunday)\n" +
-  "<b>nw</b> or /nextweek — next week (Mon–Sun)\n\n" +
+  "<b>nw</b> or /nextweek — next week (Mon–Sun)\n" +
+  "<b>thu</b>, <b>fri</b>, <b>sat</b>… — any weekday, next time it comes round\n\n" +
   "Curated, scored, and summarized. Skip the firehose.";
 
 /** Bare-word shortcuts, so members can type "t" instead of "/today".
@@ -43,6 +44,19 @@ const SHORTCUTS: Record<string, string> = {
   week: "/week",
   nw: "/nextweek",
   nextweek: "/nextweek",
+};
+
+/** Weekday names → Luxon weekday (1 = Mon … 7 = Sun). "thu"/"thurs"/"thursday"
+ *  all work; a bare day name resolves to its NEXT occurrence, today included, so
+ *  planning a week out is one word. */
+const WEEKDAYS: Record<string, number> = {
+  mon: 1, monday: 1,
+  tue: 2, tues: 2, tuesday: 2,
+  wed: 3, weds: 3, wednesday: 3,
+  thu: 4, thur: 4, thurs: 4, thursday: 4,
+  fri: 5, friday: 5,
+  sat: 6, saturday: 6,
+  sun: 7, sunday: 7,
 };
 
 export async function handleUpdate(update: TgUpdate): Promise<void> {
@@ -67,6 +81,24 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
     .limit(1);
   if (!feed) return;
   const tz = await regionTz(feed.regionId ?? "sf_bay");
+
+  // A weekday name ("thursday", "thurs", "/fri") → that day's events.
+  const dayWord = (cmd.startsWith("/") ? cmd.slice(1) : cmd).toLowerCase();
+  if (isSingleWord && WEEKDAYS[dayWord]) {
+    const today = DateTime.now().setZone(tz).startOf("day");
+    // Next occurrence, counting today — "thursday" ON Thursday means today.
+    const delta = (WEEKDAYS[dayWord] - today.weekday + 7) % 7;
+    const target = today.plus({ days: delta });
+    const when = delta === 0 ? "Today" : delta === 1 ? "Tomorrow" : target.toFormat("cccc");
+    await respond(
+      chatId,
+      feed,
+      tz,
+      { start: target.toUTC().toJSDate(), end: target.endOf("day").toUTC().toJSDate() },
+      `🗓️ <b>${when} — ${target.toFormat("ccc LLL d")}</b>`,
+    );
+    return;
+  }
 
   switch (cmd) {
     case "/start":

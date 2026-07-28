@@ -1,7 +1,7 @@
-import { getBoardView, type RangeKey } from "@/web/data";
+import { getBoardView, type BoardRange } from "@/web/data";
 import { EventsBoard } from "./EventsBoard";
 
-export async function RangeView({ range }: { range: RangeKey }) {
+export async function RangeView({ range, dayLabel }: { range: BoardRange; dayLabel?: string }) {
   const board = await getBoardView(range);
 
   if (!board) {
@@ -24,6 +24,9 @@ export async function RangeView({ range }: { range: RangeKey }) {
       horizonKey={board.horizonKey}
       horizons={board.horizons}
       telegramUrl={board.telegramUrl}
+      calendar={board.calendar}
+      activeDay={board.activeDay}
+      dayLabel={dayLabel}
     />
   );
 }

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import type { BoardEvent, BoardTier, HorizonMeta } from "@/web/board-types";
+import type { BoardEvent, BoardTier, CalendarDay, HorizonMeta } from "@/web/board-types";
 
 const TIER_META: Record<BoardTier, { label: string; icon: string; rank: number }> = {
   must_attend: { label: "Must Attend", icon: "🔥", rank: 0 },
@@ -37,11 +37,17 @@ export function EventsBoard({
   horizonKey,
   horizons,
   telegramUrl,
+  calendar,
+  activeDay,
+  dayLabel,
 }: {
   events: BoardEvent[];
   horizonKey: string;
   horizons: HorizonMeta[];
   telegramUrl: string | null;
+  calendar: CalendarDay[];
+  activeDay: string | null;
+  dayLabel?: string;
 }) {
   const horizon = horizons.find((h) => h.key === horizonKey) ?? horizons[0];
   const [mode, setMode] = useState<"tldr" | "all">("tldr");
@@ -98,9 +104,9 @@ export function EventsBoard({
   );
 
   const topScore = filtered[0]?.score ?? inMode[0]?.score ?? 0;
-  const mustAttendCount = inMode.filter((e) => e.tier === "must_attend").length;
-  const avgScore =
-    inMode.reduce((s, e) => s + e.score, 0) / Math.max(1, inMode.length);
+  // A single-day view isn't one of the four horizons, so it carries its own label.
+  const boardLabel = dayLabel ? `${dayLabel}` : horizon.boardLabel;
+  const boardDate = dayLabel ?? horizon.longDate;
 
   const rankOf = (id: string) => filtered.findIndex((e) => e.id === id) + 1;
 
@@ -144,35 +150,7 @@ export function EventsBoard({
             </p>
           </div>
 
-          <aside className="signal-summary" aria-label={`${horizon.label} summary`}>
-            <p className="summary-kicker">{horizon.label} signal snapshot</p>
-            <div className="summary-main">
-              <div className="top-score">
-                <strong>{topScore.toFixed(1)}</strong>
-                <span>Top signal</span>
-              </div>
-              <dl className="summary-stats">
-                <div>
-                  <dt>{mode === "tldr" ? "Relevant" : "All"}</dt>
-                  <dd>{String(inMode.length).padStart(2, "0")}</dd>
-                </div>
-                <div>
-                  <dt>Must attend</dt>
-                  <dd>{String(mustAttendCount).padStart(2, "0")}</dd>
-                </div>
-                <div>
-                  <dt>Avg score</dt>
-                  <dd>{avgScore.toFixed(1)}</dd>
-                </div>
-              </dl>
-            </div>
-            <div className="coverage">
-              <span>Live data · best first</span>
-              <span className="coverage-bar" aria-hidden="true">
-                <span />
-              </span>
-            </div>
-          </aside>
+          <BrowseCalendar days={calendar} activeDay={activeDay} topScore={topScore} />
         </section>
 
         <nav className="horizon-nav" aria-label="Browse events by date range">
@@ -200,9 +178,9 @@ export function EventsBoard({
 
         <section className="board-head" aria-labelledby="board-title">
           <div className="board-title">
-            <h2 id="board-title">{horizon.boardLabel}</h2>
+            <h2 id="board-title">{boardLabel}</h2>
             <p>
-              {horizon.longDate} · {mode === "tldr" ? "Curated" : "All events"} · Times in{" "}
+              {boardDate} · {mode === "tldr" ? "Curated" : "All events"} · Times in{" "}
               {zoneLabel}
             </p>
           </div>
@@ -385,6 +363,81 @@ function LinkChooser({ event, onClose }: { event: BoardEvent; onClose: () => voi
         </button>
       </div>
     </div>
+  );
+}
+
+/** Four weeks at a glance: how many curated events land on each day, so a week
+ *  can be planned without clicking through each horizon. Each day links to its
+ *  own page. Replaces the old stat panel — the counts are the useful signal. */
+function BrowseCalendar({
+  days,
+  activeDay,
+  topScore,
+}: {
+  days: CalendarDay[];
+  activeDay: string | null;
+  topScore: number;
+}) {
+  const weeks: CalendarDay[][] = [];
+  // Pad so the grid starts on Monday, matching how the week views are defined.
+  const lead = days.length ? (new Date(`${days[0].date}T12:00:00`).getDay() + 6) % 7 : 0;
+  const padded: (CalendarDay | null)[] = [...Array(lead).fill(null), ...days];
+  for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7) as CalendarDay[]);
+  const busiest = Math.max(1, ...days.map((d) => d.count));
+
+  return (
+    <aside className="browse-calendar" aria-label="Events by date">
+      <div className="calendar-head">
+        <p className="summary-kicker">Events by date</p>
+        <span className="calendar-top">
+          <strong>{topScore.toFixed(1)}</strong> top signal
+        </span>
+      </div>
+
+      <div className="calendar-dow" aria-hidden="true">
+        {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+          <span key={i}>{d}</span>
+        ))}
+      </div>
+
+      <div className="calendar-grid" role="list">
+        {weeks.map((week, wi) =>
+          week.map((day, di) => {
+            if (!day) return <span className="calendar-cell is-empty" key={`${wi}-${di}`} />;
+            const heat = day.count ? Math.max(0.18, day.count / busiest) : 0;
+            const isActive = day.date === activeDay;
+            const label = `${day.dow} ${day.month} ${day.dayOfMonth}: ${day.count} ${
+              day.count === 1 ? "event" : "events"
+            }`;
+            return (
+              <Link
+                role="listitem"
+                key={day.date}
+                href={`/day/${day.date}`}
+                className={`calendar-cell${day.isToday ? " is-today" : ""}${
+                  isActive ? " is-active" : ""
+                }${day.count ? "" : " is-quiet"}`}
+                aria-label={label}
+                aria-current={isActive ? "page" : undefined}
+                title={label}
+              >
+                <b>{day.dayOfMonth}</b>
+                {day.count ? (
+                  <i style={{ opacity: heat }} aria-hidden="true">
+                    {day.count}
+                  </i>
+                ) : (
+                  <i className="none" aria-hidden="true">
+                    ·
+                  </i>
+                )}
+              </Link>
+            );
+          }),
+        )}
+      </div>
+      <p className="calendar-foot">Pick a day to see everything on it.</p>
+    </aside>
   );
 }
 

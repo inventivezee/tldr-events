@@ -814,6 +814,133 @@ h1 span {
   font-style: normal;
 }
 
+/* --- Browse calendar (replaces the old signal-stat panel) ------------------- */
+
+.browse-calendar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.calendar-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.calendar-top {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--quiet);
+}
+
+.calendar-top strong {
+  color: var(--signal-soft);
+  font-size: 13px;
+}
+
+.calendar-dow,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.calendar-dow span {
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--quiet);
+}
+
+.calendar-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-height: 40px;
+  padding: 4px 2px;
+  border: 1px solid var(--line);
+  background: var(--surface-raised);
+  transition:
+    background-color 130ms ease,
+    border-color 130ms ease,
+    transform 130ms ease;
+}
+
+.calendar-cell:hover,
+.calendar-cell:focus-visible {
+  border-color: var(--signal);
+  transform: translateY(-1px);
+}
+
+.calendar-cell b {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1;
+}
+
+/* Count doubles as a heat indicator — opacity is set inline from the day's share
+   of the busiest day, so a glance shows where the week clusters. */
+.calendar-cell i {
+  font-style: normal;
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--signal-soft);
+}
+
+.calendar-cell i.none {
+  color: var(--quiet);
+  opacity: 0.5;
+}
+
+.calendar-cell.is-quiet {
+  background: transparent;
+}
+
+.calendar-cell.is-today {
+  border-color: var(--signal-soft);
+}
+
+.calendar-cell.is-today b {
+  color: var(--signal-soft);
+}
+
+.calendar-cell.is-active {
+  border-color: var(--signal);
+  background: var(--signal);
+}
+
+.calendar-cell.is-active b,
+.calendar-cell.is-active i {
+  color: var(--signal-ink);
+}
+
+.calendar-cell.is-empty {
+  border: none;
+  background: none;
+  min-height: 0;
+}
+
+.calendar-foot {
+  font-size: 11px;
+  color: var(--quiet);
+}
+
 /* --- Multi-source events (listed on Luma AND the host's own site, etc.) ----- */
 
 /* The card is a button (opens the chooser) rather than one big link. */

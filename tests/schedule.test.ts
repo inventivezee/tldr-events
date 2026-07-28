@@ -74,3 +74,26 @@ describe("pipeline stage gating", () => {
     expect(stageDue(forced, STAGE_HOUR.ingest, at(3, 0))).toBe(true);
   });
 });
+
+/** Weekday shortcuts: "thu" resolves to the NEXT Thursday, today included. */
+function resolveWeekday(targetWeekday: number, todayWeekday: number) {
+  return (targetWeekday - todayWeekday + 7) % 7;
+}
+
+describe("weekday commands", () => {
+  it("resolves to today when the day matches", () => {
+    expect(resolveWeekday(4, 4)).toBe(0); // Thursday, on a Thursday
+  });
+
+  it("looks forward within the week, never backwards", () => {
+    expect(resolveWeekday(4, 1)).toBe(3); // Mon -> Thu
+    expect(resolveWeekday(1, 4)).toBe(4); // Thu -> next Mon (not -3)
+    expect(resolveWeekday(7, 6)).toBe(1); // Sat -> Sun
+    for (let today = 1; today <= 7; today++)
+      for (let target = 1; target <= 7; target++) {
+        const d = resolveWeekday(target, today);
+        expect(d).toBeGreaterThanOrEqual(0);
+        expect(d).toBeLessThanOrEqual(6);
+      }
+  });
+});

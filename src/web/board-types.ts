@@ -29,6 +29,19 @@ export interface BoardEventLink {
   clickUrl: string; // click-tracked path
 }
 
+/** One day in the browse calendar. `count` is the curated (TLDR) event count, so
+ *  the calendar advertises the same set the default board view shows. */
+export interface CalendarDay {
+  date: string; // local ISO date, e.g. "2026-07-30"
+  dow: string; // "Thu"
+  dayOfMonth: number;
+  month: string; // "Jul"
+  count: number;
+  topScore: number | null;
+  isToday: boolean;
+  isPast: boolean;
+}
+
 export interface HorizonMeta {
   key: string; // today | tomorrow | this-week | next-week
   label: string;

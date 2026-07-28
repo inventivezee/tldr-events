@@ -85,3 +85,28 @@ describe("windows", () => {
     expect(tw.end.getTime()).toBeLessThan(nw.start.getTime());
   });
 });
+
+describe("naive datetime strings (no zone in the string)", () => {
+  // These run under TZ=UTC (see package.json) to match Vercel. Resolving them
+  // against the machine zone instead of the source zone put scraped events 7
+  // hours early in production while looking correct on a Pacific laptop.
+  it("interprets a scraped wall-clock time in the region, not the machine zone", () => {
+    // "Jul 30, 2026 11:30 AM" in PT is 18:30Z, never 11:30Z.
+    expect(parseToUtc("Jul 30, 2026 11:30 AM", PT).toISOString()).toBe(
+      "2026-07-30T18:30:00.000Z",
+    );
+    expect(parseToUtc("Jul 30, 2026", PT).toISOString()).toBe("2026-07-30T07:00:00.000Z");
+    expect(parseToUtc("December 5, 2026 7:00 PM", PT).toISOString()).toBe(
+      "2026-12-06T03:00:00.000Z", // PST, UTC-8
+    );
+  });
+
+  it("still honors an explicit zone when the string carries one", () => {
+    expect(parseToUtc("2026-07-30T11:30:00Z", PT).toISOString()).toBe(
+      "2026-07-30T11:30:00.000Z",
+    );
+    expect(parseToUtc("2026-07-30T11:30:00-04:00", PT).toISOString()).toBe(
+      "2026-07-30T15:30:00.000Z",
+    );
+  });
+});

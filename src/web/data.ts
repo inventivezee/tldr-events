@@ -1,12 +1,13 @@
 // Web read layer (PRD §13). Reads the same store; no schema change. Returns the
 // delivered shortlist for "this week" / "next week", tier-grouped, filterable by
 // niche (scores.category_tag) and tier.
-import { eq } from "drizzle-orm";
+import { and, eq, gte, lte, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db/client";
 import {
   dayWindow,
   thisWeekWindow,
   nextWeekWindow,
+  windowForLocalDate,
   type UtcWindow,
 } from "@/lib/time";
 import { queryDeliveryEvents, type DeliveryEvent } from "@/digest/query";
@@ -15,11 +16,21 @@ import { TIER_ORDER } from "@/scoring/tiers";
 import { FEED_ID } from "@/seed/data";
 import { clickPath } from "@/lib/links";
 import { DateTime } from "luxon";
-import type { BoardEvent, BoardTier, HorizonMeta } from "./board-types";
+import type { BoardEvent, BoardTier, CalendarDay, HorizonMeta } from "./board-types";
 
 export const DEFAULT_FEED_ID = FEED_ID;
 
 export type RangeKey = "today" | "tomorrow" | "this-week" | "next-week";
+
+/** Either a named horizon or one specific local calendar day. */
+export type BoardRange = RangeKey | { day: string };
+
+/** How far ahead the browse calendar reaches. */
+export const CALENDAR_DAYS = 28;
+
+/** Events at or below this score are noise, excluded from the curated view — the
+ *  same floor the board applies in TLDR mode, so calendar counts match the page. */
+const CURATED_MIN_SCORE = 4.0;
 
 export const RANGE_META: Record<
   RangeKey,
@@ -69,8 +80,9 @@ export interface RangeView {
   categories: string[];
 }
 
-function windowFor(range: RangeKey, tz: string): UtcWindow {
+function windowFor(range: BoardRange, tz: string): UtcWindow {
   const now = new Date();
+  if (typeof range === "object") return windowForLocalDate(range.day, tz);
   switch (range) {
     case "today":
       return dayWindow(now, tz, 0);
@@ -84,7 +96,7 @@ function windowFor(range: RangeKey, tz: string): UtcWindow {
 }
 
 export async function getRangeView(opts: {
-  range: RangeKey;
+  range: BoardRange;
   feedId?: string;
   categoryTag?: string;
   tier?: Tier;
@@ -242,22 +254,86 @@ function buildHorizons(tz: string): HorizonMeta[] {
 }
 
 export interface BoardView {
-  horizonKey: RangeKey;
+  horizonKey: RangeKey | "day";
+  /** Local ISO date when viewing one specific day, else null. */
+  activeDay: string | null;
   horizons: HorizonMeta[];
+  calendar: CalendarDay[];
   events: BoardEvent[];
   telegramUrl: string | null;
 }
 
-/** Everything the EventsBoard needs for one horizon: all scored events for the
- *  window (relevant + not; the board toggles TLDR/All client-side). */
-export async function getBoardView(range: RangeKey): Promise<BoardView | null> {
+/** Per-day curated counts for the browse calendar — one aggregate query rather
+ *  than shipping weeks of events to the client just to count them. Counts match
+ *  what the default (TLDR) board shows: industry-relevant and above the floor. */
+async function getCalendarDays(
+  meta: FeedMeta,
+  days = CALENDAR_DAYS,
+): Promise<CalendarDay[]> {
+  const tz = meta.timezone;
+  const today = DateTime.now().setZone(tz).startOf("day");
+  const window = { start: today.toUTC().toJSDate(), end: today.plus({ days }).endOf("day").toUTC().toJSDate() };
+
+  const rows = await getDb()
+    .select({
+      day: sql<string>`to_char(${schema.events.startsAt} at time zone ${sql.raw(`'${tz}'`)}, 'YYYY-MM-DD')`,
+      count: sql<number>`count(*)::int`,
+      topScore: sql<number>`max(${schema.scores.score})::float`,
+    })
+    .from(schema.events)
+    .innerJoin(
+      schema.scores,
+      and(eq(schema.scores.eventId, schema.events.id), eq(schema.scores.feedId, meta.id)),
+    )
+    .where(
+      and(
+        eq(schema.events.regionId, meta.regionId),
+        eq(schema.events.isPrimary, true),
+        eq(schema.events.status, "active"),
+        eq(schema.scores.relevant, true),
+        gte(schema.scores.score, String(CURATED_MIN_SCORE)),
+        gte(schema.events.startsAt, window.start),
+        lte(schema.events.startsAt, window.end),
+      ),
+    )
+    .groupBy(sql`1`);
+
+  const byDay = new Map(rows.map((r) => [r.day, r]));
+  const todayISO = today.toFormat("yyyy-MM-dd");
+  return Array.from({ length: days }, (_, i) => {
+    const d = today.plus({ days: i });
+    const iso = d.toFormat("yyyy-MM-dd");
+    const hit = byDay.get(iso);
+    return {
+      date: iso,
+      dow: d.toFormat("ccc"),
+      dayOfMonth: d.day,
+      month: d.toFormat("LLL"),
+      count: hit?.count ?? 0,
+      topScore: hit?.topScore ?? null,
+      isToday: iso === todayISO,
+      isPast: false,
+    };
+  });
+}
+
+/** Everything the EventsBoard needs for one horizon (or a single day): all scored
+ *  events for the window (relevant + not; the board toggles TLDR/All client-side)
+ *  plus the browse calendar. */
+export async function getBoardView(range: BoardRange): Promise<BoardView | null> {
   const meta = await getFeedMeta();
   if (!meta) return null;
-  const view = await getRangeView({ range, all: true });
+  const [view, calendar] = await Promise.all([
+    getRangeView({ range, all: true }),
+    getCalendarDays(meta),
+  ]);
   if (!view) return null;
+  const isDay = typeof range === "object";
   return {
-    horizonKey: range,
+    horizonKey: isDay ? "day" : range,
+    activeDay: isDay ? range.day : null,
     horizons: buildHorizons(meta.timezone),
+    calendar,
     events: view.events.map((e) => toBoardEvent(e, meta.id)),
     telegramUrl: telegramFollowUrl(),
   };

@@ -22,16 +22,43 @@ export function parseToUtc(input: string | number | Date, sourceTz?: string): Da
   }
   if (!dt.isValid) {
     const ms = Date.parse(input);
-    if (!Number.isNaN(ms)) return new Date(ms);
+    if (!Number.isNaN(ms)) return wallClockIn(new Date(ms), tz);
     throw new Error(`Unparseable datetime: ${JSON.stringify(input)}`);
   }
   // If the parsed value carried no explicit zone, luxon assumed local machine tz;
   // reinterpret those wall-clock digits as being in the source tz.
   if (!/[zZ]|[+-]\d{2}:?\d{2}$/.test(input.trim())) {
     dt = DateTime.fromISO(input, { zone: tz });
-    if (!dt.isValid) dt = DateTime.fromJSDate(new Date(input), { zone: tz });
+    if (!dt.isValid) return wallClockIn(new Date(input), tz);
   }
   return dt.toUTC().toJSDate();
+}
+
+/**
+ * Reinterpret a Date's WALL-CLOCK digits as being in `tz`.
+ *
+ * `Date.parse`/`new Date(str)` resolve a zone-less string against the MACHINE's
+ * timezone, so the same scraped string ("Jul 30, 2026 11:30 AM") yields a
+ * different instant on a laptop in Pacific than on Vercel, which runs in UTC —
+ * events came out 7 hours early in production only. Reading the components back
+ * with the local getters recovers exactly the digits that were in the string,
+ * and rebuilding them in `tz` makes the result machine-independent.
+ */
+function wallClockIn(d: Date, tz: string): Date {
+  if (Number.isNaN(d.getTime())) throw new Error("Unparseable datetime");
+  return DateTime.fromObject(
+    {
+      year: d.getFullYear(),
+      month: d.getMonth() + 1,
+      day: d.getDate(),
+      hour: d.getHours(),
+      minute: d.getMinutes(),
+      second: d.getSeconds(),
+    },
+    { zone: tz },
+  )
+    .toUTC()
+    .toJSDate();
 }
 
 /**
@@ -121,6 +148,22 @@ export function dayWindow(now: Date, tz: string, offsetDays = 0): UtcWindow {
     start: local.startOf("day").toUTC().toJSDate(),
     end: local.endOf("day").toUTC().toJSDate(),
   };
+}
+
+/** The local calendar day named by an ISO date ("2026-07-30"), as a UTC window. */
+export function windowForLocalDate(dateISO: string, tz: string): UtcWindow {
+  const d = DateTime.fromISO(dateISO, { zone: tz });
+  return {
+    start: d.startOf("day").toUTC().toJSDate(),
+    end: d.endOf("day").toUTC().toJSDate(),
+  };
+}
+
+/** Whole days from today to the given local date (0 = today). Null if unparseable. */
+export function daysUntilLocalDate(dateISO: string, tz: string): number | null {
+  const target = DateTime.fromISO(dateISO, { zone: tz }).startOf("day");
+  if (!target.isValid) return null;
+  return Math.round(target.diff(DateTime.now().setZone(tz).startOf("day"), "days").days);
 }
 
 /** This CALENDAR week: today → end of the current week (Sunday; weeks start Monday).
