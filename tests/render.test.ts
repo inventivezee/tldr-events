@@ -53,6 +53,16 @@ describe("renderDigestMessage", () => {
     expect(msg).toContain("more at");
   });
 
+  it("shows the site as a bare branded host, not a raw URL", () => {
+    const many = Array.from({ length: 150 }, (_, i) => ev(i, "strong"));
+    const msg = renderDigestMessage(feed, many, "weekly", TZ);
+    // Link text is the clean host; the href still carries the full canonical URL.
+    expect(msg).toMatch(/more at <a href="[^"]+">[^<]+<\/a>/);
+    const shown = msg.match(/more at <a href="[^"]+">([^<]+)<\/a>/)?.[1] ?? "";
+    expect(shown).not.toContain("https://");
+    expect(shown).not.toContain("www.");
+  });
+
   it("empty daily → no message; empty weekly → quiet-week note", () => {
     expect(renderDigestMessage(feed, [], "daily", TZ)).toBe("");
     expect(renderDigestMessage(feed, [], "weekly", TZ).toLowerCase()).toContain("quiet week");

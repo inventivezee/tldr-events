@@ -38,6 +38,24 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s;
 }
 
+/** Display name for the site: bare host, no scheme or www. Telegram shows this
+ *  as the link text while the anchor still points at the canonical URL. */
+const SITE_LABELS: Record<string, string> = { "tldrevents.com": "TLDRevents.com" };
+
+function siteLabel(): string {
+  try {
+    const host = new URL(siteUrl()).hostname.replace(/^www\./i, "").toLowerCase();
+    return SITE_LABELS[host] ?? host;
+  } catch {
+    return siteUrl();
+  }
+}
+
+/** "… +12 more at TLDRevents.com" — the tail shown when events are left out. */
+function moreFooter(remaining: number): string {
+  return `\n… +${remaining} more at <a href="${urlAttr(siteUrl())}">${htmlEscape(siteLabel())}</a>`;
+}
+
 function urlAttr(u: string): string {
   // Escape for an HTML href attribute. Angle brackets MUST be encoded too — a raw
   // < or > anywhere in the URL breaks Telegram's HTML parser and fails the whole
@@ -126,7 +144,7 @@ export function renderEventsMessage(
       const block = eventBlock(e, tz);
       const add = (sectionOpen ? 0 : SECTION[tier].length + 2) + block.length + 1;
       if (len + add > MAX_CHARS) {
-        out.push(`\n… +${totalCount - shown} more at ${siteUrl()}`);
+        out.push(moreFooter(totalCount - shown));
         return out.join("\n");
       }
       if (!sectionOpen) {
@@ -139,7 +157,7 @@ export function renderEventsMessage(
       shown++;
     }
   }
-  if (totalCount > shown) out.push(`\n… +${totalCount - shown} more at ${siteUrl()}`);
+  if (totalCount > shown) out.push(moreFooter(totalCount - shown));
   return out.join("\n");
 }
 
