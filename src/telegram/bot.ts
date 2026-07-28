@@ -59,6 +59,29 @@ const WEEKDAYS: Record<string, number> = {
   sun: 7, sunday: 7,
 };
 
+/** "☀️ <b>Today — Mon Jul 27</b>" — a relative word alone leaves the reader
+ *  guessing which date it means, especially on a reply read hours later. */
+export function dayHeader(icon: string, label: string, tz: string, offsetDays = 0): string {
+  const d = DateTime.now().setZone(tz).plus({ days: offsetDays });
+  return `${icon} <b>${label} — ${d.toFormat("ccc LLL d")}</b>`;
+}
+
+/** "🗓️ <b>This Week — Jul 27–Aug 2</b>" for a multi-day window. */
+export function rangeHeader(
+  icon: string,
+  label: string,
+  window: UtcWindow,
+  tz: string,
+): string {
+  const a = DateTime.fromJSDate(window.start, { zone: "utc" }).setZone(tz);
+  const b = DateTime.fromJSDate(window.end, { zone: "utc" }).setZone(tz);
+  const span =
+    a.month === b.month
+      ? `${a.toFormat("LLL d")}–${b.toFormat("d")}`
+      : `${a.toFormat("LLL d")}–${b.toFormat("LLL d")}`;
+  return `${icon} <b>${label} — ${span}</b>`;
+}
+
 export async function handleUpdate(update: TgUpdate): Promise<void> {
   const msg = update.message ?? update.channel_post;
   if (!msg?.text) return;
@@ -95,7 +118,7 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
       feed,
       tz,
       { start: target.toUTC().toJSDate(), end: target.endOf("day").toUTC().toJSDate() },
-      `🗓️ <b>${when} — ${target.toFormat("ccc LLL d")}</b>`,
+      dayHeader("🗓️", when, tz, delta),
     );
     return;
   }
@@ -106,17 +129,21 @@ export async function handleUpdate(update: TgUpdate): Promise<void> {
       await sendMessage(chatId, HELP);
       return;
     case "/today":
-      await respond(chatId, feed, tz, todayWindow(tz), "☀️ <b>Today</b>");
+      await respond(chatId, feed, tz, todayWindow(tz), dayHeader("☀️", "Today", tz, 0));
       return;
     case "/tomorrow":
-      await respond(chatId, feed, tz, tomorrowWindow(tz), "🌅 <b>Tomorrow</b>");
+      await respond(chatId, feed, tz, tomorrowWindow(tz), dayHeader("🌅", "Tomorrow", tz, 1));
       return;
-    case "/week":
-      await respond(chatId, feed, tz, thisWeekWindow(new Date(), tz), "🗓️ <b>This Week</b>");
+    case "/week": {
+      const w = thisWeekWindow(new Date(), tz);
+      await respond(chatId, feed, tz, w, rangeHeader("🗓️", "This Week", w, tz));
       return;
-    case "/nextweek":
-      await respond(chatId, feed, tz, nextWeekWindow(new Date(), tz), "🗓️ <b>Next Week</b>");
+    }
+    case "/nextweek": {
+      const w = nextWeekWindow(new Date(), tz);
+      await respond(chatId, feed, tz, w, rangeHeader("🗓️", "Next Week", w, tz));
       return;
+    }
     // Bind the scheduled digests to THIS chat (admin only). Lets the bot be
     // moved to a new group without redeploying: it captures the group's id and
     // every future scheduled digest posts here instead of the old chat.

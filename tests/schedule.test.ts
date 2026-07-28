@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { localHourAndDow } from "@/lib/time";
 import { stageDue, STAGE_HOUR } from "@/cron/window";
+import { dayHeader, rangeHeader } from "@/telegram/bot";
 import { DateTime } from "luxon";
 
 const PT = "America/Los_Angeles";
@@ -95,5 +96,42 @@ describe("weekday commands", () => {
         expect(d).toBeGreaterThanOrEqual(0);
         expect(d).toBeLessThanOrEqual(6);
       }
+  });
+});
+
+describe("bot reply headers carry the actual date", () => {
+  // A relative word on its own ("Today") is ambiguous when the reply is read
+  // later, or scrolled back to. Every header names the date it covers.
+  it("puts the date next to Today / Tomorrow", () => {
+    const today = DateTime.now().setZone(PT);
+    expect(dayHeader("☀️", "Today", PT, 0)).toBe(
+      `☀️ <b>Today — ${today.toFormat("ccc LLL d")}</b>`,
+    );
+    expect(dayHeader("🌅", "Tomorrow", PT, 1)).toBe(
+      `🌅 <b>Tomorrow — ${today.plus({ days: 1 }).toFormat("ccc LLL d")}</b>`,
+    );
+  });
+
+  it("names a weekday's own date", () => {
+    const h = dayHeader("🗓️", "Thursday", PT, 3);
+    expect(h).toContain("Thursday — ");
+    expect(h).toMatch(/[A-Z][a-z]{2} [A-Z][a-z]{2} \d{1,2}/); // "Thu Jul 30"
+  });
+
+  it("spans a date range for week views, including across a month boundary", () => {
+    const sameMonth = {
+      start: DateTime.fromISO("2026-07-06", { zone: PT }).toUTC().toJSDate(),
+      end: DateTime.fromISO("2026-07-12T23:59", { zone: PT }).toUTC().toJSDate(),
+    };
+    expect(rangeHeader("🗓️", "This Week", sameMonth, PT)).toBe(
+      "🗓️ <b>This Week — Jul 6–12</b>",
+    );
+    const crossMonth = {
+      start: DateTime.fromISO("2026-07-27", { zone: PT }).toUTC().toJSDate(),
+      end: DateTime.fromISO("2026-08-02T23:59", { zone: PT }).toUTC().toJSDate(),
+    };
+    expect(rangeHeader("🗓️", "This Week", crossMonth, PT)).toBe(
+      "🗓️ <b>This Week — Jul 27–Aug 2</b>",
+    );
   });
 });
