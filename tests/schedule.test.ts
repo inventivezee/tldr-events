@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { localHourAndDow } from "@/lib/time";
-import { stageDue, STAGE_HOUR } from "@/cron/window";
+import { STAGES, PIPELINE_START_HOUR } from "@/cron/pipeline";
 import { dayHeader, rangeHeader } from "@/telegram/bot";
 import { DateTime } from "luxon";
 
@@ -53,26 +53,28 @@ describe("daily digest scheduling", () => {
   });
 });
 
-describe("pipeline stage gating", () => {
-  const req = new Request("https://example.com/api/cron/x");
-
-  it("admits a stage only in its own local hour", () => {
-    expect(stageDue(req, STAGE_HOUR.ingest, at(15, 0))).toBe(true);
-    expect(stageDue(req, STAGE_HOUR.ingest, at(16, 0))).toBe(false);
-    expect(stageDue(req, STAGE_HOUR.dedup, at(16, 0))).toBe(true);
-    expect(stageDue(req, STAGE_HOUR.score, at(17, 0))).toBe(true);
-    expect(stageDue(req, STAGE_HOUR.score, at(15, 0))).toBe(false);
+describe("pipeline stages", () => {
+  // One cron drives the whole chain (Vercel dropped ticks when several jobs
+  // shared a trigger minute), so what matters now is the ORDER and that each
+  // stage is attempted once a day — not per-stage cron timing.
+  it("runs in dependency order", () => {
+    expect(STAGES.map((s) => s.name)).toEqual([
+      "ingest",
+      "ingest_extra",
+      "dedup",
+      "research",
+      "score",
+    ]);
   });
 
-  it("runs the stages in order: ingest -> dedup/research -> score", () => {
-    expect(STAGE_HOUR.ingest).toBeLessThan(STAGE_HOUR.dedup);
-    expect(STAGE_HOUR.dedup).toBeLessThanOrEqual(STAGE_HOUR.research);
-    expect(STAGE_HOUR.research).toBeLessThan(STAGE_HOUR.score);
+  it("gathers before the digest goes out", () => {
+    // Digest is due from 17:28; the chain must have time to finish first.
+    expect(PIPELINE_START_HOUR).toBeLessThan(17);
   });
 
-  it("?force=1 overrides the hour gate for manual runs", () => {
-    const forced = new Request("https://example.com/api/cron/x?force=1");
-    expect(stageDue(forced, STAGE_HOUR.ingest, at(3, 0))).toBe(true);
+  it("gives every stage its own lock name", () => {
+    const names = STAGES.map((s) => s.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 

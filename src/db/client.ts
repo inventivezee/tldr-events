@@ -46,13 +46,21 @@ export async function withJobLock<T>(
   fn: () => Promise<T>,
 ): Promise<{ ran: true; result: T } | { ran: false }> {
   const sql = sqlClient();
-  const until = new Date(Date.now() + ttlSeconds * 1000);
-  // Acquire iff no row, or the existing lease has expired. Atomic via row lock.
+  // The lease expiry is computed in SQL, not passed as a JS Date.
+  //
+  // With `prepare: false` postgres.js has to infer parameter types from the JS
+  // values, and that inference only held while this was the FIRST query on the
+  // connection — once anything else had run, the Date was inferred as text and
+  // the bind threw ("Received an instance of Date"). Every cron route happened
+  // to take its lock before touching the DB, so the fault stayed hidden until a
+  // caller read state first. Passing a plain number sidesteps the inference
+  // entirely, and using now() means the lease is timed by the database clock
+  // rather than a serverless instance's, so clock skew can't shorten or extend it.
   const acquired = await sql`
     insert into job_locks (name, locked_until, updated_at)
-    values (${name}, ${until}, now())
+    values (${name}, now() + (${ttlSeconds} * interval '1 second'), now())
     on conflict (name) do update
-      set locked_until = ${until}, updated_at = now()
+      set locked_until = now() + (${ttlSeconds} * interval '1 second'), updated_at = now()
       where job_locks.locked_until < now()
     returning name
   `;

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { cronAuthorized } from "@/cron/guard";
-import { stageDue, skippedResponse, STAGE_HOUR } from "@/cron/window";
+import { cronAuthorized, manualRun } from "@/cron/guard";
 import { withJobLock, LOCK, LOCK_TTL } from "@/db/client";
 import { runScorer } from "@/scoring/scorer";
 
@@ -10,9 +9,9 @@ export const maxDuration = 300;
 
 export async function GET(req: Request) {
   if (!cronAuthorized(req)) return NextResponse.json({ ok: false }, { status: 401 });
-  // Runs once a day, in this stage's local hour (see cron/window).
-  if (!stageDue(req, STAGE_HOUR.score))
-    return NextResponse.json(skippedResponse(STAGE_HOUR.score));
+  // Manual-only: the scheduled chain runs via /api/cron/pipeline.
+  if (!manualRun(req))
+    return NextResponse.json({ ok: true, skipped: "manual only — use /api/cron/pipeline" });
   const r = await withJobLock(LOCK.score, LOCK_TTL.score, () => runScorer());
   return NextResponse.json(r.ran ? { ok: true, feeds: r.result } : { ok: true, skipped: "locked" });
 }

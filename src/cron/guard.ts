@@ -25,3 +25,17 @@ export function cronAuthorized(req: Request): boolean {
   }
   return false;
 }
+
+/**
+ * The per-stage cron routes are no longer scheduled — /api/cron/pipeline drives
+ * the daily chain (see src/cron/pipeline.ts). They remain as manual escape
+ * hatches for re-running one stage by hand, so they require an explicit
+ * ?force=1 on top of the usual cron auth.
+ */
+export function manualRun(req: Request): boolean {
+  try {
+    return new URL(req.url).searchParams.get("force") === "1";
+  } catch {
+    return false;
+  }
+}

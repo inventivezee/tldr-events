@@ -170,7 +170,16 @@ export const clickEvents = pgTable(
   (t) => [index("click_events_event_idx").on(t.eventId)],
 );
 
+/** Lease-based job lock (see migration 0001). Mirrored here so the pipeline can
+ *  read `updated_at` to tell which stages have already been attempted today. */
+export const jobLocks = pgTable("job_locks", {
+  name: text("name").primaryKey(),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
 export type EventRow = typeof events.$inferSelect;
+export type JobLockRow = typeof jobLocks.$inferSelect;
 export type SourceRow = typeof sources.$inferSelect;
 export type FeedRow = typeof feeds.$inferSelect;
 export type PersonRow = typeof people.$inferSelect;
