@@ -49,6 +49,11 @@ const ROLE_WORDS =
  *  hyphenated names intact (no spaces around the hyphen: "Rizel Bobb-Semple"). */
 function cleanName(raw: string): string {
   let s = raw.trim();
+  // An em/en dash surrounded by spaces separates a name from whatever describes
+  // it — a role, a company, or a talk title ("Elizabeth Fuentes — Strands Agents
+  // pipeline talk"). Cut there unconditionally: the role-word test below can't
+  // recognise a talk title, and no real name contains a spaced em dash.
+  s = s.split(/\s[—–]\s/)[0].trim();
   const m = s.match(/^(.{2,}?)(?:\s[-–—]\s|,\s|\s\()(.*)$/);
   if (m) {
     const [, head, tailRaw] = m;
@@ -201,11 +206,14 @@ export async function queryDeliveryEvents(params: {
     const nameSeen = new Set<string>();
     const pushNames = (list: { name?: string | null }[]) => {
       for (const ref of list) {
-        const key = normalizeName(ref?.name ?? "");
+        const display = cleanName(ref?.name ?? "");
+        // Dedupe on the CLEANED name: "Anchit Jain — talk A" and "Anchit Jain —
+        // talk B" are different raw strings but the same person, and both
+        // rendered as "Anchit Jain" side by side.
+        const key = normalizeName(display);
         if (!key || nameSeen.has(key)) continue;
         nameSeen.add(key);
-        const display = cleanName(ref?.name ?? "");
-        if (display) speakerNames.push(display);
+        speakerNames.push(display);
       }
     };
     pushNames(billedSpeakers.map((name) => ({ name })));
