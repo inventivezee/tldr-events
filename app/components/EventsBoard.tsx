@@ -187,7 +187,7 @@ export function EventsBoard({
           <a className="telegram" href={telegramUrl} target="_blank" rel="noopener noreferrer">
             <TelegramIcon />
             <span className="telegram-label">
-              Join on <b>Telegram</b>
+              Join On <b>Telegram</b>
             </span>
             <span className="sr-only">(opens in a new tab)</span>
           </a>
