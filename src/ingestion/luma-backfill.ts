@@ -95,13 +95,16 @@ export async function runLumaBackfill(opts?: {
     .map((r) => ({ row: r, slug: lumaSlugFromUrl(r.url) }))
     .filter((c): c is { row: (typeof rows)[number]; slug: string } => !!c.slug);
 
-  // Soonest first: an event this week matters more than one in two months.
+  // Soonest UPCOMING first. Sorting the whole set by date spends the fetch budget
+  // on events that have already happened — the window reaches a day into the past
+  // so late edits are picked up, and those rows were crowding out tomorrow's.
   candidates.sort((a, b) => a.row.startsAt.getTime() - b.row.startsAt.getTime());
+  const upcoming = candidates.filter((c) => c.row.startsAt.getTime() >= now.getTime());
 
   // Full descriptions come from the event PAGE (the APIs only carry a teaser),
   // so they are fetched separately and budgeted.
   const descLimit = opts?.descriptionLimit ?? MAX_DESCRIPTION_FETCHES;
-  const needDescription = candidates
+  const needDescription = upcoming
     .filter(({ row }) => (row.description?.length ?? 0) < THIN_DESCRIPTION)
     .slice(0, descLimit);
   const fullDescriptions = new Map<string, string>();
