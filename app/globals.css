@@ -15,6 +15,7 @@
   --signal-ink: #07070c;
   --signal-soft: #bcaaff;
   --cyan: #22d3ee;
+  --telegram: #2aabee; /* Telegram brand blue */
   --warm: #fbbf24;
   --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
     Arial, sans-serif;
@@ -197,6 +198,26 @@ a {
     color 160ms ease;
 }
 
+.telegram svg {
+  width: 17px;
+  height: 17px;
+  flex: none;
+  /* Brand blue so the mark reads as Telegram at a glance on the dark shell. The
+     path is fill: currentColor, so `color` drives it. */
+  color: var(--telegram);
+  transition: color 160ms ease;
+}
+
+/* On hover the button fills with the signal purple; brand blue on purple goes
+   muddy, so the mark flips to the ink colour with the rest of the label. */
+.telegram:hover svg {
+  color: var(--signal-ink);
+}
+
+.telegram-label b {
+  font-weight: 800;
+}
+
 .telegram:hover {
   border-color: var(--signal);
   background: var(--signal);
@@ -204,15 +225,11 @@ a {
 }
 
 .hero {
-  min-height: 276px;
-  display: grid;
-  grid-template-columns: minmax(0, 1.75fr) minmax(330px, 0.75fr);
   border-bottom: 1px solid var(--line);
 }
 
 .hero-copy {
-  padding: 42px 58px 38px;
-  border-right: 1px solid var(--line);
+  padding: 36px 58px 30px;
 }
 
 .eyebrow {
@@ -257,12 +274,7 @@ h1 span {
   line-height: 1.55;
 }
 
-.signal-summary {
-  display: grid;
-  grid-template-rows: auto 1fr auto;
-  padding: 32px 32px 28px;
-  background: var(--surface);
-}
+
 
 .summary-kicker {
   margin: 0;
@@ -274,94 +286,27 @@ h1 span {
   text-transform: uppercase;
 }
 
-.summary-main {
-  display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  align-items: end;
-  gap: 22px;
-  padding: 20px 0 18px;
-}
 
-.top-score strong {
-  display: block;
-  color: var(--signal);
-  font-family: var(--mono);
-  font-size: clamp(58px, 5vw, 86px);
-  font-weight: 800;
-  letter-spacing: -0.09em;
-  line-height: 0.86;
-}
 
-.top-score span {
-  display: block;
-  margin-top: 12px;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 750;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
 
-.summary-stats {
-  display: grid;
-  gap: 11px;
-  margin: 0;
-}
 
-.summary-stats div {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 18px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 8px;
-}
 
-.summary-stats div:last-child {
-  border-bottom: 0;
-}
 
-.summary-stats dt {
-  order: 2;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
 
-.summary-stats dd {
-  order: 1;
-  margin: 0;
-  font-family: var(--mono);
-  font-size: 18px;
-  font-weight: 800;
-}
 
-.coverage {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border-top: 1px solid var(--line);
-  padding-top: 14px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-}
 
-.coverage-bar {
-  flex: 1;
-  height: 4px;
-  background: #22223a;
-}
 
-.coverage-bar span {
-  display: block;
-  width: 88%;
-  height: 100%;
-  background: var(--signal);
-}
+
+
+
+
+
+
+
+
+
+
+
 
 .horizon-nav {
   display: grid;
@@ -432,13 +377,12 @@ h1 span {
 }
 
 .board-head {
-  min-height: 102px;
-  display: grid;
-  grid-template-columns: minmax(320px, 0.72fr) minmax(680px, 1.28fr);
-  align-items: center;
-  gap: 28px;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 18px;
   border-bottom: 1px solid var(--line);
-  padding: 16px 28px;
+  padding: 14px 28px;
 }
 
 .board-title {
@@ -454,7 +398,7 @@ h1 span {
 }
 
 .board-title p {
-  margin: 8px 0 0;
+  margin: 6px 0 0;
   color: var(--muted);
   font-family: var(--mono);
   font-size: 11px;
@@ -511,12 +455,7 @@ h1 span {
   color: var(--signal);
 }
 
-.tier-filter select {
-  min-width: 158px;
-  border-color: var(--line-strong);
-  color: var(--text);
-  appearance: auto;
-}
+
 
 .feed {
   padding: 16px 20px 28px;
@@ -1197,9 +1136,7 @@ footer a {
     border-right: 0;
   }
 
-  .signal-summary {
-    display: none;
-  }
+
 
   .horizon-nav {
     grid-template-columns: repeat(2, 1fr);
@@ -1415,10 +1352,7 @@ footer a {
     flex: 1 1 calc(50% - 9px);
   }
 
-  .tier-filter,
-  .tier-filter select {
-    width: 100%;
-  }
+
 
   .event-card {
     grid-template-columns: 38px 78px minmax(0, 1fr);
@@ -1448,30 +1382,10 @@ footer a {
   color: var(--warm);
 }
 
-.mode-toggle {
-  display: inline-flex;
-  border: 1px solid var(--line-strong);
-}
-.mode-toggle a {
-  min-height: 44px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 14px;
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  transition: background-color 140ms ease, color 140ms ease;
-}
-.mode-toggle a + a {
-  border-left: 1px solid var(--line-strong);
-}
-.mode-toggle a.is-active {
-  background: var(--signal);
-  color: var(--signal-ink);
-}
+
+
+
+
 
 .show-more {
   min-height: 46px;
@@ -1495,4 +1409,492 @@ footer a {
 .show-more:hover {
   border-color: var(--signal);
   color: var(--signal);
+}
+
+/* --- Collapsible pickers: "Select by date" and "Filters" -------------------- */
+/* Both were permanently-open bands that pushed the first event below the fold on
+   a phone. Native <details> keeps them keyboard- and screen-reader-friendly with
+   no JS state, and collapsed-by-default puts events within one short scroll. */
+
+.pickers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--line);
+}
+
+.picker {
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.picker:last-child {
+  border-right: none;
+}
+
+.picker > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 0 18px;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  transition: color 130ms ease, background-color 130ms ease;
+}
+
+.picker > summary::-webkit-details-marker {
+  display: none;
+}
+
+.picker > summary:hover,
+.picker[open] > summary {
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.picker-title {
+  color: inherit;
+}
+
+.picker-hint {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--quiet);
+  text-transform: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+
+.picker-chevron {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms ease;
+}
+
+.picker[open] .picker-chevron {
+  transform: rotate(-135deg) translateY(-2px);
+}
+
+/* The calendar sits flush inside its panel rather than as a bordered card. */
+.picker .browse-calendar {
+  border: none;
+  border-top: 1px solid var(--line);
+  background: transparent;
+}
+
+.picker .filters {
+  border: none;
+  border-top: 1px solid var(--line);
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.filter-clear {
+  margin-top: 4px;
+  padding: 7px 12px;
+  background: none;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.filter-clear:hover {
+  border-color: var(--signal);
+  color: var(--text);
+}
+
+/* --- Condensed horizon nav -------------------------------------------------- */
+/* One full-size link for where you are, chips for everywhere else. */
+
+.horizon-nav {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: stretch;
+}
+
+.horizon-link.is-primary {
+  border-right: 1px solid var(--line);
+  background: var(--surface-raised);
+}
+
+.horizon-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.horizon-chip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 12px 14px;
+  border-right: 1px solid var(--line);
+  transition: background-color 130ms ease, color 130ms ease;
+}
+
+.horizon-chip:last-child {
+  border-right: none;
+}
+
+.horizon-chip:hover {
+  background: var(--surface-hover);
+}
+
+.horizon-chip strong {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.horizon-chip small {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--quiet);
+}
+
+/* --- Mobile: get events above the fold ------------------------------------- */
+
+@media (max-width: 760px) {
+  .hero-copy {
+    padding: 22px 18px 20px;
+  }
+
+  /* The headline stays — it's the brand promise — but at a size that leaves room
+     for actual events. Marketing subcopy goes; the board explains itself. */
+  h1 {
+    font-size: clamp(30px, 8.4vw, 40px);
+    letter-spacing: -0.04em;
+  }
+
+  .eyebrow {
+    margin-bottom: 12px;
+  }
+
+  .subcopy {
+    display: none;
+  }
+
+  .horizon-nav {
+    grid-template-columns: 1fr;
+  }
+
+  .horizon-link.is-primary {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    min-height: 0;
+    padding: 13px 18px;
+  }
+
+  .horizon-link.is-primary strong {
+    font-size: 19px;
+  }
+
+  .horizon-link.is-primary .horizon-date b {
+    font-size: 21px;
+  }
+
+  .horizon-chip {
+    padding: 9px 10px;
+    align-items: center;
+    text-align: center;
+  }
+
+  .horizon-chip strong {
+    font-size: 12px;
+  }
+
+  .picker > summary {
+    min-height: 44px;
+    padding-inline: 16px;
+  }
+
+  .board-head {
+    padding: 14px 16px;
+  }
+
+  .result-count {
+    padding-inline: 16px;
+  }
+}
+
+@media (max-width: 470px) {
+  h1 {
+    font-size: clamp(27px, 8vw, 34px);
+  }
+
+  .pickers {
+    grid-template-columns: 1fr;
+  }
+
+  .picker {
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .picker:last-child {
+    border-bottom: none;
+  }
+
+  /* Label shortens so the icon still reads as the point of the button. */
+  .telegram-label {
+    display: none;
+  }
+
+  .telegram {
+    max-width: none;
+    width: 44px;
+    padding-inline: 0;
+    justify-content: center;
+  }
+
+  .telegram svg {
+    width: 19px;
+    height: 19px;
+  }
+}
+
+/* --- Mobile: compress the chrome AND the card ------------------------------- */
+/* Measured on a 390×844 viewport: chrome pushed the first card to y=675 and the
+   card itself was 483px tall, so barely one event was reachable. Trim the
+   duplicated headings and tighten the card so 1–2 events land above the fold. */
+
+@media (max-width: 760px) {
+  /* The eyebrow repeats what the brand and board already say. */
+  .eyebrow {
+    display: none;
+  }
+
+  /* The horizon nav directly above states the range, so the board's own big
+     heading is duplication; keep only its one-line date/timezone note. */
+  .board-head h2 {
+    display: none;
+  }
+
+  .board-head {
+    padding: 10px 16px;
+  }
+
+  .board-title p {
+    margin: 0;
+  }
+
+  .result-count {
+    padding-block: 8px;
+  }
+
+  .horizon-link.is-primary {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 11px 18px;
+    gap: 12px;
+  }
+
+  .horizon-link.is-primary small {
+    font-size: 9px;
+  }
+
+  .tier-heading {
+    padding: 12px 16px;
+    gap: 4px;
+  }
+
+  /* Card: keep score, title, when/where and the action; clamp the blurb and drop
+     the researched-hosts line, which is usually "not yet researched" anyway. */
+  .event-card {
+    grid-template-columns: 34px 74px minmax(0, 1fr);
+  }
+
+  .score > strong {
+    font-size: 26px;
+  }
+
+  .score > small {
+    font-size: 8px;
+  }
+
+  .event-main {
+    padding: 11px 12px;
+  }
+
+  .event-title {
+    font-size: 16px;
+    line-height: 1.25;
+  }
+
+  .event-tldr {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    font-size: 12px;
+  }
+
+  .room-signal {
+    padding: 9px 12px;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .room-signal small,
+  .room-signal > span:last-child {
+    display: none;
+  }
+
+  .event-action {
+    padding: 9px 12px;
+  }
+
+  .event-action > span,
+  .event-action.multi > a {
+    min-height: 38px;
+  }
+}
+
+/* Final mobile squeeze — measured, not guessed: this brings the first card fully
+   above the fold on a 390×844 viewport with the next one peeking. */
+@media (max-width: 760px) {
+  .board-head {
+    padding: 9px 16px;
+  }
+
+  .tier-heading {
+    padding: 9px 16px;
+  }
+
+  .feed {
+    padding-top: 8px;
+  }
+
+  .tier-group {
+    margin-top: 4px;
+  }
+
+  .horizon-chip {
+    padding: 7px 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* The tier group heading directly above each list already says "Must Attend",
+     so the per-card tier badge is pure repetition — and it was wrapping the badge
+     row onto two lines. The category badge stays; that's information the heading
+     doesn't carry. */
+  .event-card .tier-badge {
+    display: none;
+  }
+
+  .event-topline {
+    margin-bottom: 8px;
+  }
+
+  .room-signal {
+    padding: 8px 12px;
+  }
+
+  .event-action.multi > a {
+    min-height: 32px;
+  }
+
+  .event-action.multi {
+    gap: 5px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* Room signal reads as a label, not a centered headline. */
+  .room-signal {
+    justify-content: flex-start;
+    text-align: left;
+  }
+
+  .room-signal strong {
+    font-size: 13px;
+    font-weight: 700;
+  }
+}
+
+/* --- Wide screens: calendar open AND events still near the fold ------------- */
+/* The calendar is open by default at ≥1000px (it uses otherwise-empty width),
+   which costs vertical space, so the hero and the grid tighten to compensate. */
+@media (min-width: 1000px) {
+  /* Headline left, date/filter panels right — the calendar consumes the width the
+     hero was wasting rather than adding height below it. */
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.55fr) minmax(390px, 0.9fr);
+    align-items: stretch;
+  }
+
+  .hero .pickers {
+    grid-template-columns: 1fr;
+    align-content: start;
+    border-bottom: 0;
+    border-left: 1px solid var(--line);
+  }
+
+  .hero .picker {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .hero .picker:last-child {
+    border-bottom: 0;
+  }
+
+  .hero-copy {
+    padding: 30px 48px 26px;
+  }
+
+  .eyebrow {
+    margin-bottom: 14px;
+  }
+
+  .subcopy {
+    margin-top: 14px;
+    font-size: 16px;
+  }
+
+  .picker .browse-calendar {
+    padding: 12px 18px 14px;
+    gap: 7px;
+  }
+
+  .calendar-cell {
+    min-height: 32px;
+  }
+
+  .calendar-foot {
+    display: none;
+  }
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { BoardEvent, BoardTier, CalendarDay, HorizonMeta } from "@/web/board-types";
 
 const TIER_META: Record<BoardTier, { label: string; icon: string; rank: number }> = {
@@ -10,7 +10,17 @@ const TIER_META: Record<BoardTier, { label: string; icon: string; rank: number }
   worth_a_look: { label: "Worth a Look", icon: "👀", rank: 2 },
 };
 const TIER_ORDER: BoardTier[] = ["must_attend", "strong_pick", "worth_a_look"];
+const TIER_FILTERS: { value: "all" | BoardTier; label: string }[] = [
+  { value: "all", label: "All tiers" },
+  { value: "must_attend", label: "🔥 Must Attend" },
+  { value: "strong_pick", label: "⭐ Strong Pick" },
+  { value: "worth_a_look", label: "👀 Worth a Look" },
+];
 const BAY_TZ = "America/Los_Angeles";
+/** Score a board event must clear to appear in the main list. Anything relevant
+ *  but below it stays one tap away behind "show lower-ranked", so the default
+ *  view is only the events genuinely worth an evening. */
+const VISIBLE_MIN_SCORE = 6.5;
 
 function formatEventTime(iso: string, timeZone: string) {
   return new Intl.DateTimeFormat("en-US", {
@@ -23,6 +33,18 @@ function formatEventTime(iso: string, timeZone: string) {
   })
     .format(new Date(iso))
     .replace(",", " ·");
+}
+
+/** Telegram's paper-plane mark, inlined so it needs no network request. */
+function TelegramIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path
+        fill="currentColor"
+        d="M21.94 4.3 19.2 19.1c-.2 1.1-.85 1.37-1.72.85l-4.75-3.5-2.29 2.2c-.25.25-.47.47-.95.47l.34-4.84 8.82-7.97c.38-.34-.08-.53-.6-.19L6.16 13.3l-4.67-1.46c-1.01-.32-1.03-1.01.21-1.5l18.2-7.02c.85-.31 1.59.2 1.24 2.98Z"
+      />
+    </svg>
+  );
 }
 
 function zoneLabelOf(timeZone: string) {
@@ -50,19 +72,34 @@ export function EventsBoard({
   dayLabel?: string;
 }) {
   const horizon = horizons.find((h) => h.key === horizonKey) ?? horizons[0];
-  const [mode, setMode] = useState<"tldr" | "all">("tldr");
   const [category, setCategory] = useState<string>("All");
   const [tier, setTier] = useState<"all" | BoardTier>("all");
   const [showLow, setShowLow] = useState(false);
   const [displayTz, setDisplayTz] = useState(BAY_TZ);
   // Event whose source links are being chosen (multi-source events only).
   const [chooser, setChooser] = useState<BoardEvent | null>(null);
+  const datePicker = useRef<HTMLDetailsElement>(null);
+
+  // The calendar is worth showing outright where there's room, and worth
+  // collapsing where there isn't. Rather than pick one, follow the viewport:
+  // open by default on a wide screen, closed on a phone. Only re-applied when
+  // the breakpoint is actually CROSSED, so it never reopens itself while
+  // someone is scrolling or fights a panel they just closed.
+  useEffect(() => {
+    const wide = window.matchMedia("(min-width: 1000px)");
+    const apply = () => {
+      if (datePicker.current) datePicker.current.open = wide.matches;
+    };
+    apply();
+    wide.addEventListener("change", apply);
+    return () => wide.removeEventListener("change", apply);
+  }, []);
 
   useEffect(() => {
     setCategory("All");
     setTier("all");
     setShowLow(false);
-  }, [horizonKey, mode]);
+  }, [horizonKey]);
 
   useEffect(() => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -71,12 +108,12 @@ export function EventsBoard({
 
   const zoneLabel = zoneLabelOf(displayTz);
 
-  // TLDR = industry-relevant AND scoring above 4.0 (events at/below 4.0 drop out
-  // of the curated feed and live only in All). All = everything (incl. non-relevant
-  // noise and the sub-4.0 tail).
+  // One list, always curated: industry-relevant and above the 4.0 floor. The
+  // TLDR/All toggle is gone — the floor plus the collapsed lower tier already do
+  // the filtering it offered, and it cost a row of chrome on every screen.
   const inMode = useMemo(
-    () => (mode === "tldr" ? events.filter((e) => e.relevant && e.score > 4.0) : events),
-    [events, mode],
+    () => events.filter((e) => e.relevant && e.score > 4.0),
+    [events],
   );
 
   const categoryOptions = useMemo(() => {
@@ -108,7 +145,27 @@ export function EventsBoard({
   const boardLabel = dayLabel ? `${dayLabel}` : horizon.boardLabel;
   const boardDate = dayLabel ?? horizon.longDate;
 
+  // Explicitly picking a tier means you asked for those events, so the score
+  // cutoff steps aside; otherwise the tail hides behind the button.
+  const cutoffApplies = tier === "all" && !showLow;
+  const shown = cutoffApplies
+    ? filtered.filter((e) => e.score >= VISIBLE_MIN_SCORE)
+    : filtered;
+  const hiddenCount = filtered.length - shown.length;
+
   const rankOf = (id: string) => filtered.findIndex((e) => e.id === id) + 1;
+
+  // The horizon you're on leads the nav; the rest shrink to chips. A single-day
+  // view belongs to no horizon, so nothing is promoted.
+  const primaryHorizon = activeDay ? null : horizon;
+  const otherHorizons = horizons.filter((h) => h.key !== primaryHorizon?.key);
+
+  // Collapsed panels must still say what's active, or a filter set earlier looks
+  // like missing events.
+  const filterSummary =
+    [category !== "All" ? category : null, TIER_FILTERS.find((t) => t.value === tier)?.label]
+      .filter((x) => x && x !== "All tiers")
+      .join(" · ") || "None";
 
   return (
     <div className="site-shell">
@@ -121,14 +178,17 @@ export function EventsBoard({
         <div className="system-status" aria-label="Feed status">
           <span>
             <i className="live-dot" aria-hidden="true" />
-            {mode === "tldr" ? "Curated feed" : "All events"}
+            Curated feed
           </span>
           <span>SF Bay Area / {zoneLabel}</span>
         </div>
 
         {telegramUrl ? (
           <a className="telegram" href={telegramUrl} target="_blank" rel="noopener noreferrer">
-            Join on Telegram <span aria-hidden="true">↗</span>
+            <TelegramIcon />
+            <span className="telegram-label">
+              Join on <b>Telegram</b>
+            </span>
             <span className="sr-only">(opens in a new tab)</span>
           </a>
         ) : (
@@ -150,99 +210,125 @@ export function EventsBoard({
             </p>
           </div>
 
-          <BrowseCalendar days={calendar} activeDay={activeDay} topScore={topScore} />
+          {/* Beside the headline on a wide screen — that column was empty, and the
+              calendar is more useful there than more height below. Collapsed into
+              tap-to-open bars on a phone. */}
+          <div className="pickers">
+            <details className="picker" ref={datePicker}>
+              <summary>
+                <span className="picker-title">Select by date</span>
+                <span className="picker-hint">{activeDay ? dayLabel : "4 weeks"}</span>
+                <span className="picker-chevron" aria-hidden="true" />
+              </summary>
+              <BrowseCalendar days={calendar} activeDay={activeDay} topScore={topScore} />
+            </details>
+
+            <details className="picker">
+              <summary>
+                <span className="picker-title">Filters</span>
+                <span className="picker-hint">{filterSummary}</span>
+                <span className="picker-chevron" aria-hidden="true" />
+              </summary>
+              <div className="filters" aria-label="Filter ranked events">
+                <span className="filter-label">Topic</span>
+                <div className="filter-row">
+                  {categoryOptions.map((option) => {
+                    const isActive = option === category;
+                    return (
+                      <button
+                        className={`filter-button${isActive ? " is-active" : ""}`}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => setCategory(option)}
+                        key={option}
+                      >
+                        {option} {String(categoryCounts[option] ?? 0).padStart(2, "0")}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <span className="filter-label">Tier</span>
+                <div className="filter-row">
+                  {TIER_FILTERS.map((t) => {
+                    const isActive = tier === t.value;
+                    return (
+                      <button
+                        className={`filter-button${isActive ? " is-active" : ""}`}
+                        type="button"
+                        aria-pressed={isActive}
+                        onClick={() => setTier(t.value)}
+                        key={t.value}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {(category !== "All" || tier !== "all") && (
+                  <button
+                    className="filter-clear"
+                    type="button"
+                    onClick={() => {
+                      setCategory("All");
+                      setTier("all");
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </details>
+          </div>
         </section>
 
+        {/* The active horizon leads at full size; the others stay as compact
+            chips, so the nav costs one band instead of four. */}
         <nav className="horizon-nav" aria-label="Browse events by date range">
-          {horizons.map((item) => {
-            const isActive = item.key === horizonKey;
-            return (
-              <Link
-                className={`horizon-link${isActive ? " is-active" : ""}`}
-                href={item.path}
-                aria-current={isActive ? "page" : undefined}
-                key={item.key}
-              >
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{item.meta}</small>
-                </span>
-                <span className="horizon-date">
-                  <b>{item.date}</b>
-                  <small>{item.dateLabel}</small>
-                </span>
+          {primaryHorizon ? (
+            <Link
+              className="horizon-link is-primary"
+              href={primaryHorizon.path}
+              aria-current="page"
+            >
+              <span>
+                <strong>{primaryHorizon.label}</strong>
+                <small>{primaryHorizon.meta}</small>
+              </span>
+              <span className="horizon-date">
+                <b>{primaryHorizon.date}</b>
+                <small>{primaryHorizon.dateLabel}</small>
+              </span>
+            </Link>
+          ) : null}
+          <div className="horizon-chips">
+            {otherHorizons.map((item) => (
+              <Link className="horizon-chip" href={item.path} key={item.key}>
+                <strong>{item.label}</strong>
+                <small>{item.date}</small>
               </Link>
-            );
-          })}
+            ))}
+          </div>
         </nav>
+
 
         <section className="board-head" aria-labelledby="board-title">
           <div className="board-title">
             <h2 id="board-title">{boardLabel}</h2>
             <p>
-              {boardDate} · {mode === "tldr" ? "Curated" : "All events"} · Times in{" "}
-              {zoneLabel}
+              {boardDate} · Times in {zoneLabel}
             </p>
           </div>
 
-          <div className="filters" aria-label="Filter ranked events">
-            <span className="filter-label">View</span>
-            <span className="mode-toggle" role="group" aria-label="Feed mode">
-              <a
-                className={mode === "tldr" ? "is-active" : ""}
-                aria-pressed={mode === "tldr"}
-                role="button"
-                tabIndex={0}
-                onClick={() => setMode("tldr")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setMode("tldr")}
-              >
-                TLDR
-              </a>
-              <a
-                className={mode === "all" ? "is-active" : ""}
-                aria-pressed={mode === "all"}
-                role="button"
-                tabIndex={0}
-                onClick={() => setMode("all")}
-                onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && setMode("all")}
-              >
-                All
-              </a>
-            </span>
-
-            <span className="filter-label">Topic</span>
-            {categoryOptions.map((option) => {
-              const isActive = option === category;
-              return (
-                <button
-                  className={`filter-button${isActive ? " is-active" : ""}`}
-                  type="button"
-                  aria-pressed={isActive}
-                  onClick={() => setCategory(option)}
-                  key={option}
-                >
-                  {option} {String(categoryCounts[option] ?? 0).padStart(2, "0")}
-                </button>
-              );
-            })}
-
-            <label className="tier-filter">
-              <span className="sr-only">Filter by event tier</span>
-              <select value={tier} onChange={(e) => setTier(e.target.value as "all" | BoardTier)}>
-                <option value="all">Tier: All</option>
-                <option value="must_attend">Tier: Must Attend</option>
-                <option value="strong_pick">Tier: Strong Pick</option>
-                <option value="worth_a_look">Tier: Worth a Look</option>
-              </select>
-            </label>
-          </div>
         </section>
 
         <section className="feed" aria-label={`Ranked ${horizon.label.toLowerCase()} events`}>
-          <p className="result-count" aria-live="polite">
-            Showing {filtered.length} of {inMode.length}{" "}
-            {mode === "tldr" ? "relevant" : ""} events
-          </p>
+          {category !== "All" || tier !== "all" ? (
+            <p className="result-count" aria-live="polite">
+              Showing {shown.length} of {filtered.length} events
+            </p>
+          ) : null}
 
           {filtered.length === 0 ? (
             <div className="empty-state">
@@ -258,32 +344,23 @@ export function EventsBoard({
               </button>
             </div>
           ) : (
-            TIER_ORDER.map((tierKey) => {
-              const tierEvents = filtered.filter((e) => e.tier === tierKey);
-              if (tierEvents.length === 0) return null;
-              const info = TIER_META[tierKey];
-              const isLow = tierKey === "worth_a_look";
-              const collapsed = isLow && !showLow && tier === "all";
-
-              return (
-                <section className="tier-group" key={tierKey}>
-                  <div className="tier-heading">
-                    <h3>
-                      <span aria-hidden="true">{info.icon}</span>
-                      {info.label}
-                    </h3>
-                    <span>
-                      Tier {String(info.rank + 1).padStart(2, "0")} · {tierEvents.length}{" "}
-                      {tierEvents.length === 1 ? "event" : "events"}
-                    </span>
-                  </div>
-
-                  {collapsed ? (
-                    <button className="show-more" type="button" onClick={() => setShowLow(true)}>
-                      👀 Show {tierEvents.length} lower-ranked{" "}
-                      {tierEvents.length === 1 ? "event" : "events"}
-                    </button>
-                  ) : (
+            <>
+              {TIER_ORDER.map((tierKey) => {
+                const tierEvents = shown.filter((e) => e.tier === tierKey);
+                if (tierEvents.length === 0) return null;
+                const info = TIER_META[tierKey];
+                return (
+                  <section className="tier-group" key={tierKey}>
+                    <div className="tier-heading">
+                      <h3>
+                        <span aria-hidden="true">{info.icon}</span>
+                        {info.label}
+                      </h3>
+                      <span>
+                        Tier {String(info.rank + 1).padStart(2, "0")} · {tierEvents.length}{" "}
+                        {tierEvents.length === 1 ? "event" : "events"}
+                      </span>
+                    </div>
                     <div className="event-list">
                       {tierEvents.map((event) => (
                         <EventRow
@@ -295,10 +372,17 @@ export function EventsBoard({
                         />
                       ))}
                     </div>
-                  )}
-                </section>
-              );
-            })
+                  </section>
+                );
+              })}
+
+              {hiddenCount > 0 ? (
+                <button className="show-more" type="button" onClick={() => setShowLow(true)}>
+                  👀 Show {hiddenCount} lower-ranked{" "}
+                  {hiddenCount === 1 ? "event" : "events"}
+                </button>
+              ) : null}
+            </>
           )}
         </section>
       </main>
