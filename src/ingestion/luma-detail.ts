@@ -93,6 +93,33 @@ export async function fetchLumaDetail(idOrSlug: string): Promise<{
   }
 }
 
+/** Pull an Event description out of a page's schema.org JSON-LD.
+ *
+ *  Split from the fetch so it can be tested without network — which matters,
+ *  because lu.ma will 429 an IP that asks too often and then the only way to
+ *  "test" the live path is to make the block worse. */
+export function descriptionFromHtml(html: string): string | null {
+  for (const m of html.matchAll(
+    /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g,
+  )) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(m[1]);
+    } catch {
+      continue; // a malformed block shouldn't hide a good one later in the page
+    }
+    const blocks = Array.isArray(parsed) ? parsed : [parsed];
+    for (const b of blocks as Record<string, unknown>[]) {
+      if (b?.["@type"] !== "Event") continue;
+      const desc = typeof b.description === "string" ? b.description.trim() : "";
+      // Cap it: the scorer reads the first ~1500 chars, and the column shouldn't
+      // carry a novel.
+      if (desc.length > 40) return desc.slice(0, 6000);
+    }
+  }
+  return null;
+}
+
 /** Thrown when lu.ma rate-limits us, so callers can stop rather than hammer. */
 export class LumaRateLimited extends Error {
   constructor() {
@@ -123,26 +150,7 @@ export async function fetchLumaPageDescription(slug: string): Promise<string | n
     // instead of burning the rest of the batch against a closed door.
     if (res.status === 429) throw new LumaRateLimited();
     if (!res.ok) return null;
-    const html = await res.text();
-    for (const m of html.matchAll(
-      /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g,
-    )) {
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(m[1]);
-      } catch {
-        continue;
-      }
-      const blocks = Array.isArray(parsed) ? parsed : [parsed];
-      for (const b of blocks as Record<string, unknown>[]) {
-        if (b?.["@type"] !== "Event") continue;
-        const desc = typeof b.description === "string" ? b.description.trim() : "";
-        // Cap it: the scorer only reads the first ~1500 chars anyway, and the
-        // column shouldn't carry a novel.
-        if (desc.length > 40) return desc.slice(0, 6000);
-      }
-    }
-    return null;
+    return descriptionFromHtml(await res.text());
   } catch (e) {
     if (e instanceof LumaRateLimited) throw e;
     return null; // fail-soft: a thin description is better than a failed run
