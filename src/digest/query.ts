@@ -90,6 +90,7 @@ export async function queryDeliveryEvents(params: {
       tldr: schema.scores.tldr,
       categoryTag: schema.scores.categoryTag,
       relevant: schema.scores.relevant,
+      signals: schema.scores.signals,
     })
     .from(schema.events)
     .innerJoin(
@@ -177,16 +178,40 @@ export async function queryDeliveryEvents(params: {
     }
     notable.sort((a, b) => (b.prominence ?? 0) - (a.prominence ?? 0));
 
-    // Cleaned host/speaker display names (deduped) for the digest's 🎤 line.
+    // Speakers the scorer read out of the event description. Platforms often
+    // leave featured_guests empty while the write-up names the line-up in prose,
+    // so these are the most reliable answer to "who is speaking".
+    const signals = (r.signals ?? {}) as Record<string, unknown>;
+    const billedSpeakers = Array.isArray(signals.key_speakers)
+      ? (signals.key_speakers as unknown[])
+          .filter((x): x is string => typeof x === "string" && x.trim().length > 1)
+          .slice(0, 6)
+      : [];
+
+    // Names for the digest's 🎤 line — SPEAKERS FIRST.
+    //
+    // This used to walk hosts-then-speakers over one merged list and take the
+    // first few, so a hosted event always showed its organisers: the OpenAI
+    // Codex meetup listed "TatianaSF com, Natalie Pan, Funding Breakthrough Lab"
+    // (all hosts) while ten actual speakers sat unused behind them. Who is
+    // speaking is the reason to attend; the host is a fallback when nobody is
+    // billed. LLM-extracted speakers (from the event description) outrank both,
+    // since platforms often leave featured_guests empty.
     const speakerNames: string[] = [];
     const nameSeen = new Set<string>();
-    for (const ref of refs) {
-      const key = normalizeName(ref.name);
-      if (!key || nameSeen.has(key)) continue;
-      nameSeen.add(key);
-      const display = cleanName(ref.name ?? "");
-      if (display) speakerNames.push(display);
-    }
+    const pushNames = (list: { name?: string | null }[]) => {
+      for (const ref of list) {
+        const key = normalizeName(ref?.name ?? "");
+        if (!key || nameSeen.has(key)) continue;
+        nameSeen.add(key);
+        const display = cleanName(ref?.name ?? "");
+        if (display) speakerNames.push(display);
+      }
+    };
+    pushNames(billedSpeakers.map((name) => ({ name })));
+    pushNames((r.speakers ?? []) as PersonRef[]);
+    // Hosts only fill the gap when nobody is billed as speaking.
+    if (speakerNames.length === 0) pushNames((r.hosts ?? []) as PersonRef[]);
 
     return {
       id: r.id,

@@ -93,6 +93,62 @@ export async function fetchLumaDetail(idOrSlug: string): Promise<{
   }
 }
 
+/** Thrown when lu.ma rate-limits us, so callers can stop rather than hammer. */
+export class LumaRateLimited extends Error {
+  constructor() {
+    super("lu.ma rate limited (429)");
+    this.name = "LumaRateLimited";
+  }
+}
+
+/** Full event description from a Luma event page.
+ *
+ *  Neither the list nor the detail API carries it — the list gives ~150 chars
+ *  ending in "… see more", which is most of why stored descriptions average 214
+ *  characters and the scorer has been judging events nearly blind. The public
+ *  page embeds the whole thing as schema.org JSON-LD, which is stable, already
+ *  plain text, and needs no DOM parsing. Costs one page fetch per event, so
+ *  callers should bound how many they do per run. */
+export async function fetchLumaPageDescription(slug: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://lu.ma/${encodeURIComponent(slug)}`, {
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+      },
+      signal: AbortSignal.timeout(12000),
+    });
+    // lu.ma rate-limits page loads hard: ~200 in quick succession returned 429
+    // for everything afterwards. Surface it so the caller stops for this run
+    // instead of burning the rest of the batch against a closed door.
+    if (res.status === 429) throw new LumaRateLimited();
+    if (!res.ok) return null;
+    const html = await res.text();
+    for (const m of html.matchAll(
+      /<script[^>]*application\/ld\+json[^>]*>([\s\S]*?)<\/script>/g,
+    )) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(m[1]);
+      } catch {
+        continue;
+      }
+      const blocks = Array.isArray(parsed) ? parsed : [parsed];
+      for (const b of blocks as Record<string, unknown>[]) {
+        if (b?.["@type"] !== "Event") continue;
+        const desc = typeof b.description === "string" ? b.description.trim() : "";
+        // Cap it: the scorer only reads the first ~1500 chars anyway, and the
+        // column shouldn't carry a novel.
+        if (desc.length > 40) return desc.slice(0, 6000);
+      }
+    }
+    return null;
+  } catch (e) {
+    if (e instanceof LumaRateLimited) throw e;
+    return null; // fail-soft: a thin description is better than a failed run
+  }
+}
+
 /** The lu.ma slug/short-code from an event URL, or null if it isn't a Luma link.
  *  Handles lu.ma and luma.com; ignores listing roots (e.g. luma.com/sf). */
 export function lumaSlugFromUrl(url: string | null | undefined): string | null {

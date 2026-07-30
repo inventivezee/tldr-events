@@ -4,7 +4,7 @@
 // score row or a changed content_hash / rubric_version are (re)scored. QUALITY
 // score only (profile-agnostic). Uses researched people signals; TL;DR names names.
 import { and, eq, gte, lte } from "drizzle-orm";
-import { getDb, schema } from "@/db/client";
+import { getDb, schema, sqlClient } from "@/db/client";
 import type { EventRow, FeedRow } from "@/db/schema";
 import type { PersonRef, ScoreResult } from "@/types";
 import { forwardWindow, fmtLocalDateTime } from "@/lib/time";
@@ -48,7 +48,22 @@ const SCORE_TOOL: ToolDef = {
         properties: {
           attendee_count: { type: "number" },
           attendee_quality: { type: "number", description: "0–10" },
-          speaker_quality: { type: "number", description: "0–10" },
+          speaker_quality: {
+            type: "number",
+            description:
+              "0–10: how notable/senior the people SPEAKING are (not the organisers). 0 when nobody is billed.",
+          },
+          host_quality: {
+            type: "number",
+            description:
+              "0–10: how reputable the ORGANISER is, using the track record supplied under HOST TRACK RECORD plus any recognisable brand. 0 when unknown.",
+          },
+          key_speakers: {
+            type: "array",
+            items: { type: "string" },
+            description:
+              "Up to 5 people BILLED TO SPEAK/present/panel at this event, read from the description or the speaker list — 'Name — Title, Company' where stated. Organisers/hosts do NOT belong here unless they are also billed as speaking. Empty when nobody is billed. Never invent names.",
+          },
           event_type: { type: "string" },
         },
       },
@@ -134,6 +149,9 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
   needScore.sort((a, b) => heuristicScore(b) - heuristicScore(a));
   const work = needScore.slice(0, batch);
 
+  // One aggregate for the whole run, not a query per event.
+  const hostStats = await hostTrackRecords(feed.id);
+
   resetUsage();
   let scored = 0;
   // Score with bounded concurrency — the editorial calls are independent, so a
@@ -146,7 +164,7 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
       while (next < work.length) {
         const e = work[next++];
         try {
-          const result = await scoreEvent(feed, e, tz);
+          const result = await scoreEvent(feed, e, tz, hostStats);
           await writeScore(feed, e, result);
           scored++;
         } catch (err) {
@@ -166,6 +184,54 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
     scored,
     tokens: tok,
   };
+}
+
+export interface HostRecord {
+  events: number;
+  avgAttendance: number | null;
+  avgScore: number | null;
+}
+
+/**
+ * Track record per host, from our own history: how often they appear as an
+ * organiser, and how well their events draw.
+ *
+ * Attendance is the load-bearing figure — it is observed from the platforms, so
+ * it says "people actually turn up to this organiser's events" without any
+ * circularity. The average prior score is included but flagged in the prompt as
+ * our own earlier opinion, because feeding a model its own past judgments will
+ * happily ratchet a host upward forever if it's treated as independent evidence.
+ * Only organisers with a real history (>= MIN_HOST_EVENTS) are reported at all.
+ */
+const MIN_HOST_EVENTS = 3;
+
+export async function hostTrackRecords(feedId: string): Promise<Map<string, HostRecord>> {
+  const rows = await sqlClient()`
+    select lower(btrim(h->>'name')) as host,
+           count(*)::int                      as events,
+           round(avg(nullif(e.guest_count, 0)))::int as avg_attendance,
+           round(avg(s.score), 1)::float      as avg_score
+    from events e
+    join scores s on s.event_id = e.id and s.feed_id = ${feedId}
+    cross join lateral jsonb_array_elements(coalesce(e.hosts, '[]'::jsonb)) h
+    where e.is_primary and coalesce(btrim(h->>'name'), '') <> ''
+    group by 1
+    having count(*) >= ${MIN_HOST_EVENTS}
+  `;
+  const out = new Map<string, HostRecord>();
+  for (const r of rows as unknown as {
+    host: string;
+    events: number;
+    avg_attendance: number | null;
+    avg_score: number | null;
+  }[]) {
+    out.set(normalizeName(r.host), {
+      events: r.events,
+      avgAttendance: r.avg_attendance,
+      avgScore: r.avg_score,
+    });
+  }
+  return out;
 }
 
 /** A researched-or-raw person, ready to describe to the scorer. */
@@ -192,6 +258,8 @@ export interface ScoringInput {
   url?: string | null;
   description?: string | null;
   people: ScoringPerson[];
+  /** Pre-rendered "Name — N events, avg attendance X, avg prior score Y" lines. */
+  hostRecords?: string[];
 }
 
 /** The editorial scoring core — pure over its input, no DB access. */
@@ -206,7 +274,12 @@ export async function scoreWithRubric(input: ScoringInput): Promise<ScoreResult>
   });
 }
 
-async function scoreEvent(feed: FeedRow, e: EventRow, tz: string): Promise<ScoreResult> {
+async function scoreEvent(
+  feed: FeedRow,
+  e: EventRow,
+  tz: string,
+  hostStats?: Map<string, HostRecord>,
+): Promise<ScoreResult> {
   const speakers = (e.speakers ?? []) as PersonRef[];
   const hosts = (e.hosts ?? []) as PersonRef[];
   const names = [...hosts, ...speakers].map((p) => p.name).filter(Boolean);
@@ -216,6 +289,17 @@ async function scoreEvent(feed: FeedRow, e: EventRow, tz: string): Promise<Score
     ...hosts.map((h) => toScoringPerson(h, "host", profiles)),
     ...speakers.map((s) => toScoringPerson(s, "speaker", profiles)),
   ];
+
+  const hostRecords = hosts
+    .map((h) => {
+      const rec = hostStats?.get(normalizeName(h.name ?? ""));
+      if (!rec) return null;
+      const bits = [`${rec.events} events in our history`];
+      if (rec.avgAttendance) bits.push(`avg attendance ${rec.avgAttendance}`);
+      if (rec.avgScore != null) bits.push(`avg prior score ${rec.avgScore}`);
+      return `${h.name} — ${bits.join(", ")}`;
+    })
+    .filter((x): x is string => !!x);
 
   return scoreWithRubric({
     rubric: feed.scoringRubric,
@@ -230,6 +314,7 @@ async function scoreEvent(feed: FeedRow, e: EventRow, tz: string): Promise<Score
     url: e.url,
     description: e.description,
     people,
+    hostRecords,
   });
 }
 
@@ -273,13 +358,19 @@ function buildPromptFromInput(input: ScoringInput): string {
   };
   const hosts = input.people.filter((p) => p.role === "host");
   const speakers = input.people.filter((p) => p.role === "speaker");
+  if (speakers.length) {
+    lines.push("BILLED SPEAKERS / FEATURED GUESTS (with researched signals where available):");
+    for (const s of speakers) lines.push(describe(s));
+  }
   if (hosts.length) {
-    lines.push("HOSTS (with researched signals where available):");
+    lines.push("HOSTS / ORGANISERS (these run the event; they are NOT the speakers unless the description also bills them as speaking):");
     for (const h of hosts) lines.push(describe(h));
   }
-  if (speakers.length) {
-    lines.push("SPEAKERS / FEATURED GUESTS (with researched signals where available):");
-    for (const s of speakers) lines.push(describe(s));
+  if (input.hostRecords?.length) {
+    lines.push(
+      "HOST TRACK RECORD (from our own history — attendance is observed from the platforms; the prior score is our own earlier rating, so treat it as weak evidence, not independent proof):",
+    );
+    for (const h of input.hostRecords) lines.push(`  • ${h}`);
   }
   if (!hosts.length && !speakers.length) {
     lines.push(
@@ -288,7 +379,13 @@ function buildPromptFromInput(input: ScoringInput): string {
   }
 
   lines.push(
-    "\nScore this event's QUALITY for the feed's founder/investor audience using the rubric. The score is driven by relevance, format, topic importance and apparent quality/scale/host. Treat any named or researched people as a modest BONUS that can lift a good event — but an unknown room must NEVER cap or lower the score.",
+    "\nScore this event's QUALITY for the feed's founder/investor audience using the rubric. The score is driven by relevance, format, topic importance and apparent quality/scale/host.",
+  );
+  lines.push(
+    "Read the DESCRIPTION for a billed line-up — organisers frequently list speakers in prose ('Invited Speaker: 1) …', 'Featuring …', 'Fireside with …') while the structured guest list stays empty or holds unrelated attendees. Put whoever is billed to speak into signals.key_speakers, and judge signals.speaker_quality on THOSE people, not on the organisers.",
+  );
+  lines.push(
+    "Weight who is SPEAKING well above who is HOSTING: a genuinely notable speaker is a strong lift, while a reputable organiser is a mild one. Neither may cap or lower the score when unknown — that is the normal case.",
   );
   return lines.join("\n");
 }

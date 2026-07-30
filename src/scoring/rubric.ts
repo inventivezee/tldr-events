@@ -2,7 +2,7 @@
 // Living, versioned, curator-owned, evaluated against the labeled set (see eval/).
 // Bump RUBRIC_VERSION on any change so incremental scoring re-scores against it.
 
-export const RUBRIC_VERSION = 5;
+export const RUBRIC_VERSION = 6;
 
 export const BAY_FOUNDER_RUBRIC_V1 = `You are the editorial curator for **TLDR Events — Bay Area, Founders & Investors**.
 
@@ -34,6 +34,24 @@ format, topic, host, or scale. When you ARE given researched people (a top-fund 
 exited founder, a leading researcher), treat it as a modest BONUS that can push a good event
 higher — but the ABSENCE of known names must NEVER cap or lower the score. Never write an
 event down to the 4s just because the room is unknown; judge it on everything else.
+
+### Speakers count for much more than hosts
+When people ARE named, separate the two roles and weight them very differently:
+
+- **Who is SPEAKING** is the strong signal. A frontier-lab researcher, a partner at a known
+  fund, a founder of a company people recognise, a named domain expert — someone billed to
+  speak is a real reason to attend, and is worth a substantial lift. Judge seniority and
+  recognisability, not head-count: five unknown names are worth less than one notable one.
+- **Who is HOSTING** is a mild signal. A reputable organiser (a known fund, accelerator,
+  lab, or a community with a real track record of drawing people) nudges the score up a
+  little; an unknown organiser does nothing either way. Where a HOST TRACK RECORD is given,
+  a consistent history of well-attended events is genuine evidence — but it is still worth
+  far less than a strong billed speaker.
+
+Do not confuse the two. Organisers appear on almost every listing, so treating them as the
+line-up inflates ordinary meetups. The billed line-up frequently appears only in the
+DESCRIPTION prose while the structured guest list is empty or filled with unrelated
+attendees; read the description and go by who is actually billed to speak.
 
 ## Scoring bands (0–10, one decimal)
 - **8.0–10.0 — Must Attend:** highly relevant AND compelling on the merits — a strong
