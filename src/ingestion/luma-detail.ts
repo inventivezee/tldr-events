@@ -4,21 +4,59 @@
 // The detail endpoint `event/get?event_api_id=<x>` accepts BOTH the api_id and
 // the public URL slug/short-code, so any lu.ma URL can be resolved.
 import type { NormalizedEvent, PersonRef } from "@/types";
+import { logger } from "@/lib/logger";
+
+const log = logger("luma");
 
 export const BASE = process.env.LUMA_API_BASE || "https://api.lu.ma";
 
+/** Statuses worth trying again: rate limiting and transient server faults. */
+const RETRYABLE = new Set([429, 500, 502, 503, 504]);
+const MAX_ATTEMPTS = Number(process.env.LUMA_MAX_ATTEMPTS ?? 4);
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * GET JSON from the Luma API, retrying rate limits and transient errors.
+ *
+ * Without this a single 429 silently dropped whatever that call carried — a page
+ * of a calendar, or one event's attendance and speakers — and the gap only
+ * showed up later as a missing event. Backs off exponentially with jitter and
+ * honours Retry-After when the server sends one, so a burst recovers within the
+ * same run instead of waiting a day for the next.
+ */
 export async function getJson(url: string): Promise<any> {
-  const res = await fetch(url, {
-    headers: {
-      accept: "application/json",
-      "user-agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-    },
-    // Bound each request so a stalled connection can't eat the cron time budget.
-    signal: AbortSignal.timeout(8000),
-  });
-  if (!res.ok) throw new Error(`Luma ${res.status} for ${url}`);
-  return res.json();
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url, {
+        headers: {
+          accept: "application/json",
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+        },
+        // Bound each request so a stalled connection can't eat the cron budget.
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) return await res.json();
+      if (!RETRYABLE.has(res.status) || attempt === MAX_ATTEMPTS) {
+        throw new Error(`Luma ${res.status} for ${url}`);
+      }
+      const retryAfter = Number(res.headers.get("retry-after"));
+      const wait = Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 20000)
+        : Math.min(600 * 2 ** (attempt - 1), 8000) + Math.random() * 400;
+      log.warn(`Luma ${res.status}; retry ${attempt}/${MAX_ATTEMPTS - 1} in ${Math.round(wait)}ms`);
+      await sleep(wait);
+    } catch (e) {
+      lastError = e;
+      // A timeout or socket error is worth one more go for the same reason.
+      const isAbort = e instanceof Error && /abort|timeout/i.test(e.message);
+      if (!isAbort || attempt === MAX_ATTEMPTS) throw e;
+      await sleep(Math.min(600 * 2 ** (attempt - 1), 8000));
+    }
+  }
+  throw lastError ?? new Error(`Luma request failed: ${url}`);
 }
 
 export function personRefs(list: any): PersonRef[] {

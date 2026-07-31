@@ -51,6 +51,16 @@ export const SEED_SOURCES: SeedSource[] = [
     config: { cal_id: "cal-Sl7q1nHTRXQzjP2" },
   },
   {
+    // Community calendar (lu.ma/clawcamp). Runs SF summits alongside Nairobi and
+    // NYC dates, so the adapter's Bay Area check does real work here.
+    id: "luma_clawcamp",
+    name: "ClawCamp",
+    kind: "luma_calendar",
+    region_id: "sf_bay",
+    priority: 20,
+    config: { cal_id: "cal-FwYIAG4ISvpPrbv" },
+  },
+  {
     id: "supermomos_sf",
     name: "Supermomos (SF)",
     kind: "browser",

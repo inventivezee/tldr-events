@@ -7,6 +7,7 @@ import type { SourceRow } from "@/db/schema";
 import type { FetchFn } from "../types";
 import { parseToUtc } from "@/lib/time";
 import { categorize } from "../categorize";
+import { keepForBayArea } from "@/lib/region";
 import { logger } from "@/lib/logger";
 import { BASE, getJson, personRefs } from "../luma-detail";
 
@@ -106,10 +107,19 @@ export const fetchLuma: FetchFn = async (source) => {
 
   const entries = await paginate(baseUrl);
   const events: NormalizedEvent[] = [];
+  let outOfRegion = 0;
   for (const entry of entries) {
     try {
       const ev = parseLumaEntry(source, entry);
-      if (ev) events.push(ev);
+      if (!ev) continue;
+      // A followed calendar is not a place: the same organiser runs SF events and
+      // "ClawCamp Nairobi". Every row would otherwise be stamped with this
+      // source's region and land in the Bay Area feed.
+      if (!keepForBayArea(ev.city, ev.address, ev.venue_name)) {
+        outOfRegion++;
+        continue;
+      }
+      events.push(ev);
     } catch (e) {
       log.warn(`skip malformed entry in ${source.id}`, e);
     }
@@ -122,6 +132,9 @@ export const fetchLuma: FetchFn = async (source) => {
   // Attendance + full host/guest lists come from the detail endpoint, filled
   // uniformly for every source by enrichLumaEvents in the ingestion runner (so
   // lu.ma links from Cerebral Valley / Google are covered too) — not here.
-  log.info(`${source.id}: ${events.length} events from ${entries.length} entries`);
+  log.info(
+    `${source.id}: ${events.length} events from ${entries.length} entries` +
+      (outOfRegion ? ` (${outOfRegion} outside the Bay Area)` : ""),
+  );
   return events;
 };

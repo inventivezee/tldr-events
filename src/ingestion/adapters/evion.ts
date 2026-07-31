@@ -18,12 +18,10 @@ import type { FetchFn } from "../types";
 import { parseToUtc } from "@/lib/time";
 import { categorize } from "../categorize";
 import { logger } from "@/lib/logger";
+import { isBayArea } from "@/lib/region";
 
 const log = logger("adapter:evion");
 
-/** Bay Area place names as they appear in Evion's location line. */
-const BAY_AREA =
-  /(bay area|san francisco|^sf\b|\bsf\b|oakland|berkeley|palo alto|menlo park|mountain view|san jose|santa clara|sunnyvale|redwood city|stanford|cupertino|los altos|emeryville|alameda|hayward|fremont|burlingame|san mateo|foster city|milpitas|campbell|saratoga|los gatos|belmont|daly city|richmond, ca|marin|sausalito|south san francisco|brisbane|colma|pacifica|union city|newark, ca|walnut creek|pleasanton|dublin, ca|livermore|san carlos|atherton|woodside|portola valley|half moon bay|san bruno|millbrae)/i;
 
 interface RawCard {
   url: string;
@@ -120,7 +118,7 @@ export const fetchEvion: FetchFn = async (source, ctx) => {
   let skippedRegion = 0;
   for (const c of cards) {
     try {
-      if (!c.location || !BAY_AREA.test(c.location)) {
+      if (!isBayArea(c.location)) {
         skippedRegion++;
         continue;
       }
