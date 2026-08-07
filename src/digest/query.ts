@@ -22,6 +22,7 @@ export interface DeliveryEvent {
   title: string;
   url: string | null;
   startsAt: Date;
+  endsAt: Date | null;
   city: string | null;
   venueName: string | null;
   guestCount: number | null;
@@ -85,6 +86,7 @@ export async function queryDeliveryEvents(params: {
       title: schema.events.title,
       url: schema.events.url,
       startsAt: schema.events.startsAt,
+      endsAt: schema.events.endsAt,
       city: schema.events.city,
       venueName: schema.events.venueName,
       guestCount: schema.events.guestCount,
@@ -226,6 +228,7 @@ export async function queryDeliveryEvents(params: {
       title: r.title,
       url: r.url,
       startsAt: r.startsAt,
+      endsAt: r.endsAt,
       city: r.city,
       venueName: r.venueName,
       guestCount: r.guestCount,

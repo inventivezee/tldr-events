@@ -569,7 +569,7 @@ function EventRow({
             </span>
             <span className="category-badge">{event.category}</span>
           </span>
-          <strong className="event-title">{event.title}</strong>
+          <h4 className="event-title">{event.title}</h4>
           <span className="event-details">
             <time dateTime={event.startsAt}>{details[0]}</time>
             {details.slice(1).map((d, i) => (

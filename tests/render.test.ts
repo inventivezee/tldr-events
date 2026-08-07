@@ -13,6 +13,7 @@ function ev(i: number, tier: Tier, title = `Event ${i}`): DeliveryEvent {
     title,
     url: `https://lu.ma/evt${i}`,
     startsAt: new Date(`2026-07-2${(i % 9) + 1}T02:00:00Z`),
+    endsAt: null,
     city: "San Francisco",
     venueName: "Frontier Tower",
     guestCount: 40,

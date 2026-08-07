@@ -644,6 +644,7 @@ h1 span {
 }
 
 .event-title {
+  margin: 0;
   font-size: clamp(18px, 1.55vw, 23px);
   font-weight: 780;
   letter-spacing: -0.025em;

@@ -190,6 +190,8 @@ function toBoardEvent(e: DeliveryEvent, feedId: string): BoardEvent {
     tldr: e.tldr,
     source: links[0]?.label ?? "source",
     clickUrl: links[0]?.clickUrl ?? clickPath(e.id, feedId, "web"),
+    sourceUrl: e.links[0]?.url ?? e.url,
+    endsAt: e.endsAt ? e.endsAt.toISOString() : null,
     links,
   };
 }

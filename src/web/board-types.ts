@@ -19,6 +19,10 @@ export interface BoardEvent {
   tldr: string | null;
   source: string; // e.g. "Luma" — label of the primary link
   clickUrl: string; // primary destination (click-tracked)
+  /** The event's real page on its source. Used for structured data, which must
+   *  cite the canonical registration page rather than our click redirect. */
+  sourceUrl: string | null;
+  endsAt: string | null; // ISO, when the source published one
   /** Every distinct destination. Length > 1 → the card offers a choice
    *  (e.g. a Luma registration page AND the host's own site). */
   links: BoardEventLink[];
