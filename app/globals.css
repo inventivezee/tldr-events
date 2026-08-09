@@ -1905,15 +1905,36 @@ footer a {
   }
 }
 
-/* Says why a "this week" board is showing next week's dates. Reads as a status
-   line, not an error — the events are real, the window just widened. */
-.board-note {
-  margin: 6px 0 0;
-  padding: 5px 10px;
-  border-left: 2px solid var(--signal);
-  background: var(--surface);
-  color: var(--signal-soft);
+
+/* The board is showing dates outside the range named on this tile, so the badge
+   sits right under that name and is filled rather than tinted — a muted line
+   under the header was easy to scroll straight past, and someone who misses it
+   reads next week's dates as a bug. */
+.horizon-extended {
+  display: inline-block;
+  margin-top: 9px;
+  padding: 4px 9px;
+  background: var(--signal);
+  color: var(--signal-ink);
   font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 0.02em;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* On the active tile the purple fill would vanish into the background. */
+.horizon-link.is-active .horizon-extended {
+  background: var(--signal-ink);
+  color: var(--signal-soft);
+}
+
+@media (max-width: 760px) {
+  .horizon-extended {
+    margin-top: 7px;
+    padding: 3px 7px;
+    font-size: 9px;
+    white-space: normal;
+  }
 }

@@ -359,7 +359,7 @@ export async function getBoardView(range: BoardRange): Promise<BoardView | null>
         from.month === to.month
           ? `${from.toFormat("LLL d")}–${to.toFormat("d")}`
           : `${from.toFormat("LLL d")}–${to.toFormat("LLL d")}`;
-      extendedNote = `Nothing left this week — showing next week (${span}) too`;
+      extendedNote = `Also showing next week · ${span}`;
     }
   }
 

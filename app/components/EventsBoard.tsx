@@ -297,6 +297,9 @@ export function EventsBoard({
               <span>
                 <strong>{primaryHorizon.label}</strong>
                 <small>{primaryHorizon.meta}</small>
+                {extendedNote ? (
+                  <span className="horizon-extended">{extendedNote}</span>
+                ) : null}
               </span>
               <span className="horizon-date">
                 <b>{primaryHorizon.date}</b>
@@ -321,7 +324,7 @@ export function EventsBoard({
             <p>
               {boardDate} · Times in {zoneLabel}
             </p>
-            {extendedNote ? <p className="board-note">{extendedNote}</p> : null}
+
           </div>
 
         </section>
