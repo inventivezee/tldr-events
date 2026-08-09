@@ -32,6 +32,10 @@ export const CALENDAR_DAYS = 28;
  *  same floor the board applies in TLDR mode, so calendar counts match the page. */
 const CURATED_MIN_SCORE = 4.0;
 
+/** Mirrors VISIBLE_MIN_SCORE in EventsBoard: the score an event needs to appear
+ *  in the main list rather than behind "show lower-ranked". */
+export const BOARD_VISIBLE_MIN_SCORE = 6.5;
+
 export const RANGE_META: Record<
   RangeKey,
   { heading: string; blurb: string; path: string; nav: string }
@@ -257,6 +261,10 @@ function buildHorizons(tz: string): HorizonMeta[] {
 
 export interface BoardView {
   horizonKey: RangeKey | "day";
+  /** Set when the week ran dry and next week was pulled in to fill it — a
+   *  sentence explaining the extra dates, so the extra events never look like a
+   *  bug in the date filter. */
+  extendedNote: string | null;
   /** Local ISO date when viewing one specific day, else null. */
   activeDay: string | null;
   horizons: HorizonMeta[];
@@ -331,12 +339,56 @@ export async function getBoardView(range: BoardRange): Promise<BoardView | null>
   ]);
   if (!view) return null;
   const isDay = typeof range === "object";
+
+  let events = view.events;
+  let extendedNote: string | null = null;
+
+  // "This week" shrinks as the week goes on, and by Sunday it covers a single
+  // day — which regularly leaves nothing above the board's floor while the week
+  // ahead is full. Rather than show an empty board, roll next week in and say so.
+  if (shouldExtendThisWeek(range, events)) {
+    const next = await getRangeView({ range: "next-week", all: true });
+    if (next && clearsFloor(next.events).length) {
+      // The two windows are adjacent, not overlapping (this week ends Sunday,
+      // next week starts Monday), so nothing is duplicated by concatenating.
+      events = [...events, ...next.events];
+      const nw = nextWeekWindow(new Date(), meta.timezone);
+      const from = DateTime.fromJSDate(nw.start, { zone: "utc" }).setZone(meta.timezone);
+      const to = DateTime.fromJSDate(nw.end, { zone: "utc" }).setZone(meta.timezone);
+      const span =
+        from.month === to.month
+          ? `${from.toFormat("LLL d")}–${to.toFormat("d")}`
+          : `${from.toFormat("LLL d")}–${to.toFormat("LLL d")}`;
+      extendedNote = `Nothing left this week — showing next week (${span}) too`;
+    }
+  }
+
   return {
     horizonKey: isDay ? "day" : range,
+    extendedNote,
     activeDay: isDay ? range.day : null,
     horizons: buildHorizons(meta.timezone),
     calendar,
-    events: view.events.map((e) => toBoardEvent(e, meta.id)),
+    events: events.map((e) => toBoardEvent(e, meta.id)),
     telegramUrl: telegramFollowUrl(),
   };
+}
+
+/** Events a visitor sees by default: relevant and above the board's floor. */
+export function clearsFloor<T extends { relevant: boolean; score: number }>(events: T[]): T[] {
+  return events.filter((e) => e.relevant && e.score >= BOARD_VISIBLE_MIN_SCORE);
+}
+
+/**
+ * Should the "this week" board borrow next week?
+ *
+ * Only when nothing at all clears the floor. A thin week is still a week; the
+ * case worth fixing is the empty board — most obviously on a Sunday, when the
+ * window has narrowed to a single day.
+ */
+export function shouldExtendThisWeek<T extends { relevant: boolean; score: number }>(
+  range: BoardRange,
+  events: T[],
+): boolean {
+  return range === "this-week" && clearsFloor(events).length === 0;
 }

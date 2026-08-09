@@ -65,6 +65,7 @@ export async function RangeView({
         calendar={board.calendar}
         activeDay={board.activeDay}
         dayLabel={dayLabel}
+        extendedNote={board.extendedNote}
       />
     </>
   );

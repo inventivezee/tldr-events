@@ -62,6 +62,7 @@ export function EventsBoard({
   calendar,
   activeDay,
   dayLabel,
+  extendedNote,
 }: {
   events: BoardEvent[];
   horizonKey: string;
@@ -70,6 +71,7 @@ export function EventsBoard({
   calendar: CalendarDay[];
   activeDay: string | null;
   dayLabel?: string;
+  extendedNote?: string | null;
 }) {
   const horizon = horizons.find((h) => h.key === horizonKey) ?? horizons[0];
   const [category, setCategory] = useState<string>("All");
@@ -319,6 +321,7 @@ export function EventsBoard({
             <p>
               {boardDate} · Times in {zoneLabel}
             </p>
+            {extendedNote ? <p className="board-note">{extendedNote}</p> : null}
           </div>
 
         </section>

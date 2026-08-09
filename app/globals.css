@@ -1904,3 +1904,16 @@ footer a {
     display: none;
   }
 }
+
+/* Says why a "this week" board is showing next week's dates. Reads as a status
+   line, not an error — the events are real, the window just widened. */
+.board-note {
+  margin: 6px 0 0;
+  padding: 5px 10px;
+  border-left: 2px solid var(--signal);
+  background: var(--surface);
+  color: var(--signal-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
