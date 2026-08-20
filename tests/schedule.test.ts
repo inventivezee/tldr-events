@@ -137,3 +137,17 @@ describe("bot reply headers carry the actual date", () => {
     );
   });
 });
+
+describe("pipeline stage completion", () => {
+  // Consolidating six crons into one made every stage run ONCE a day. Scoring is
+  // batch-limited per run, so that quietly capped it at one batch and left a
+  // permanent backlog — 327 of 377 events in the window had no score, i.e. were
+  // invisible to both the site and the digest. Scoring is a queue, not an event.
+  it("marks scoring as a queue-draining stage, and the rest as once-daily", () => {
+    const score = STAGES.find((s) => s.name === "score");
+    expect(score?.hasBacklog).toBeTypeOf("function");
+    for (const s of STAGES.filter((s) => s.name !== "score")) {
+      expect(s.hasBacklog, `${s.name} should be once-daily`).toBeUndefined();
+    }
+  });
+});

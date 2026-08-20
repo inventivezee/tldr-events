@@ -23,7 +23,7 @@
 // missed tick simply retries on the next one and the chain self-heals. The
 // digest is not a one-shot either: runDigestPoster decides for itself whether a
 // daily or weekly post is due, so it is safe to call on every spare tick.
-import { getDb, schema, withJobLock, LOCK_TTL } from "@/db/client";
+import { getDb, schema, sqlClient, withJobLock, LOCK_TTL } from "@/db/client";
 import { runIngestion } from "@/ingestion/runner";
 import { runLumaBackfill } from "@/ingestion/luma-backfill";
 import { runDedup } from "@/dedup/canonicalize";
@@ -46,7 +46,18 @@ export interface Stage {
   name: string;
   run: () => Promise<unknown>;
   ttl: number;
+  /**
+   * Optional: a stage that processes a QUEUE rather than happening once. When
+   * this returns true the stage runs again on a later tick even though it has
+   * already been attempted today, and it may do so outside the gather window —
+   * draining a backlog is not gathering.
+   */
+  hasBacklog?: () => Promise<boolean>;
 }
+
+/** Ceiling on scoring work per local day, so a permanently-failing event can't
+ *  turn the drain loop into an unbounded spend. */
+const DAILY_SCORE_CAP = Number(process.env.DAILY_SCORE_CAP ?? 500);
 
 export const STAGES: Stage[] = [
   {
@@ -75,8 +86,42 @@ export const STAGES: Stage[] = [
     },
   },
   { name: "research", ttl: LOCK_TTL.research, run: () => runResearch() },
-  { name: "score", ttl: LOCK_TTL.score, run: () => runScorer() },
+  {
+    name: "score",
+    ttl: LOCK_TTL.score,
+    run: () => runScorer(),
+    // Scoring is batch-limited per run so no single invocation nears the
+    // function timeout. Before this, "attempted today" marked it done after ONE
+    // batch — capacity was sized for the three daily cron slots it had before
+    // the pipeline was consolidated into one, so the window silently ran a
+    // permanent backlog (327 of 377 events unscored, i.e. invisible to the site
+    // and the digest). It now keeps going until the queue is empty.
+    hasBacklog: scoringBacklog,
+  },
 ];
+
+/** True while events in the scoring window still have no score for a live feed. */
+async function scoringBacklog(): Promise<boolean> {
+  const [row] = (await sqlClient()`
+    select
+      (select count(*) from events e
+         join feeds f on f.enabled
+         left join scores s on s.event_id = e.id and s.feed_id = f.id
+        where e.is_primary and e.status = 'active'
+          and e.starts_at > now() and e.starts_at < now() + interval '21 days'
+          and s.event_id is null)::int as unscored,
+      -- Converted BACK to timestamptz: date_trunc on a zone-shifted now()
+      -- yields a NAIVE local timestamp, and comparing that against a timestamptz
+      -- would have it re-read as UTC — the cap would reset hours early.
+      (select count(*) from scores
+        where scored_at > (date_trunc('day', now() at time zone ${SCHEDULE_TZ})
+                             at time zone ${SCHEDULE_TZ}))::int as scored_today
+  `) as unknown as { unscored: number; scored_today: number }[];
+  // Column aliases come back snake_case from Postgres; reading a camelCase key
+  // here silently yielded undefined, and `undefined < cap` is false — the drain
+  // never started.
+  return row.unscored > 0 && row.scored_today < DAILY_SCORE_CAP;
+}
 
 export interface TickResult {
   ran: string | null;
@@ -85,16 +130,28 @@ export interface TickResult {
   pending?: string[];
 }
 
-/** Stages whose lock shows no attempt since the start of the local day. */
-async function pendingStages(now: Date): Promise<string[]> {
+/**
+ * What still needs doing: stages not yet attempted today (only once the gather
+ * window has opened), plus any queue-draining stage that still has a backlog —
+ * those run at any hour, since catching up isn't gathering.
+ */
+async function pendingStages(now: Date, gathering: boolean): Promise<string[]> {
   const db = getDb();
   const todayStart = dayWindow(now, SCHEDULE_TZ, 0).start;
   const locks = await db.select().from(schema.jobLocks);
   const lastRun = new Map(locks.map((l) => [l.name, l.updatedAt]));
-  return STAGES.filter((s) => {
+
+  const out: string[] = [];
+  for (const s of STAGES) {
     const at = lastRun.get(s.name);
-    return !at || at < todayStart;
-  }).map((s) => s.name);
+    const notRunToday = !at || at < todayStart;
+    if (gathering && notRunToday) {
+      out.push(s.name);
+      continue;
+    }
+    if (s.hasBacklog && (await s.hasBacklog())) out.push(s.name);
+  }
+  return out;
 }
 
 /**
@@ -109,7 +166,7 @@ export async function runPipelineTick(opts?: { force?: boolean; now?: Date }): P
   // Before the gather window, only the digest may act (it self-gates, and the
   // weekly posts at its own hour).
   const gathering = opts?.force || hour >= PIPELINE_START_HOUR;
-  const pending = gathering ? await pendingStages(now) : [];
+  const pending = await pendingStages(now, gathering);
 
   if (pending.length) {
     const stage = STAGES.find((s) => s.name === pending[0])!;
