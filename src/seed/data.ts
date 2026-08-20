@@ -116,6 +116,20 @@ export const SEED_SOURCES: SeedSource[] = [
     config: { url: "https://evion.app/events/" },
   },
   {
+    // Conference sites with their own domain, read from the schema.org Event
+    // markup they already publish. Actuate is the case that exposed the gap:
+    // a robotics developer conference at Fort Mason, on no platform we scrape.
+    // Add a URL here for any conference worth tracking.
+    id: "conference_sites",
+    name: "Conference sites (JSON-LD)",
+    kind: "site_jsonld",
+    region_id: "sf_bay",
+    priority: 15,
+    config: {
+      urls: ["https://actuate.foxglove.dev/"],
+    },
+  },
+  {
     id: "google_sf",
     name: "Google Search",
     kind: "browser",
@@ -132,6 +146,14 @@ export const SEED_SOURCES: SeedSource[] = [
         "longevity biotech investor event Bay Area this week",
         "AI hackathon San Francisco Bay Area",
         "tech startup pitch night San Jose Palo Alto this week",
+        // The queries above skew to meetups and dinners, which is why a robotics
+        // DEVELOPER CONFERENCE on its own domain was never surfaced. These aim
+        // at the ticketed-conference/summit tier that organisers host themselves.
+        "robotics conference San Francisco 2026",
+        "AI infrastructure summit Bay Area 2026",
+        "developer conference San Francisco 2026 tickets",
+        "machine learning conference Bay Area 2026",
+        "biotech longevity summit San Francisco 2026",
       ],
     },
   },

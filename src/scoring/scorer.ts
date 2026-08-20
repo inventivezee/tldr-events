@@ -8,7 +8,14 @@ import { getDb, schema, sqlClient } from "@/db/client";
 import type { EventRow, FeedRow } from "@/db/schema";
 import type { PersonRef, ScoreResult } from "@/types";
 import { forwardWindow, fmtLocalDateTime } from "@/lib/time";
-import { structuredCall, llmConfigured, resetUsage, usage, type ToolDef } from "@/lib/llm";
+import {
+  defaultModel,
+  structuredCall,
+  llmConfigured,
+  resetUsage,
+  usage,
+  type ToolDef,
+} from "@/lib/llm";
 import { resolvePeople } from "@/research/speakers";
 import { heuristicScore } from "./heuristic";
 import { tierFromScore } from "./tiers";
@@ -16,8 +23,9 @@ import { normalizeName } from "@/lib/text";
 import { logger } from "@/lib/logger";
 
 const log = logger("scorer");
-// Scoring now runs with bounded concurrency and only once a day (3 cron slots),
-// so each run takes a bigger bite: 3 × 40 covers a full day's new/changed events.
+// Per-run cap, sized so one invocation stays well inside the function timeout.
+// Throughput comes from the pipeline re-running this stage until the queue is
+// empty (see cron/pipeline.ts), not from a large batch.
 const DEFAULT_BATCH = 40;
 
 const SCORE_TOOL: ToolDef = {
@@ -303,7 +311,7 @@ async function scoreEvent(
 
   return scoreWithRubric({
     rubric: feed.scoringRubric,
-    model: feed.model || process.env.SCORING_MODEL || "claude-opus-4-8",
+    model: feed.model || process.env.SCORING_MODEL || defaultModel("scoring"),
     title: e.title,
     startsAt: e.startsAt,
     tz,
@@ -405,7 +413,7 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
       relevant: r.industry_relevant !== false, // default to relevant when unsure
       tldr: r.tldr ?? null,
       signals: r.signals ?? {},
-      model: feed.model || process.env.SCORING_MODEL || "claude-opus-4-8",
+      model: feed.model || process.env.SCORING_MODEL || defaultModel("scoring"),
       rubricVersion: feed.rubricVersion ?? 1,
       contentHash: e.contentHash,
       scoredAt: new Date(),
@@ -419,7 +427,7 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
         relevant: r.industry_relevant !== false,
         tldr: r.tldr ?? null,
         signals: r.signals ?? {},
-        model: feed.model || process.env.SCORING_MODEL || "claude-opus-4-8",
+        model: feed.model || process.env.SCORING_MODEL || defaultModel("scoring"),
         rubricVersion: feed.rubricVersion ?? 1,
         contentHash: e.contentHash,
         scoredAt: new Date(),

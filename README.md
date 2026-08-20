@@ -143,3 +143,57 @@ npm run build     # Next.js production build
 
 - **Phase 2 — Email** (Appendix D): adds `subscribers/subscriptions/deliveries/email_events` + a Resend dispatch worker. No changes to Phase 1 tables.
 - **Phase 3 — Personalization** (§15): adds a `profiles` table + a fit re-rank at read time. `scores.score` is already profile-agnostic quality.
+
+## Switching the AI model
+
+Scoring and speaker research both go through one client (`src/lib/llm.ts`). Two
+provider modes, chosen by `LLM_PROVIDER`:
+
+| Setting | Meaning |
+| --- | --- |
+| `anthropic` (default) | Claude, via the official SDK |
+| anything else | An OpenAI-compatible `/chat/completions` host |
+
+`deepseek`, `qwen`, `openrouter`, `together`, `groq` and `openai` have built-in
+base URLs, so a name and a key are enough. Any other host needs `LLM_BASE_URL`.
+
+**DeepSeek** (cheapest of the ones with reliable tool calling):
+
+```
+LLM_PROVIDER=deepseek
+LLM_API_KEY=sk-...
+SCORING_MODEL=deepseek-chat
+RESEARCH_MODEL=deepseek-chat
+```
+
+**Qwen** (Alibaba DashScope, OpenAI-compatible mode):
+
+```
+LLM_PROVIDER=qwen
+LLM_API_KEY=sk-...
+SCORING_MODEL=qwen-plus
+RESEARCH_MODEL=qwen-turbo
+```
+
+**Back to Claude:** set `LLM_PROVIDER=anthropic` and an Anthropic key. Leaving
+`SCORING_MODEL`/`RESEARCH_MODEL` unset picks a sensible default per provider.
+
+Set these in Vercel (Project → Settings → Environment Variables) and redeploy.
+Scoring is incremental, so switching model does NOT re-score the existing
+catalogue — bump `RUBRIC_VERSION` in `src/scoring/rubric.ts` (and the feed's
+`rubric_version`) if you want everything rescored on the new model.
+
+`feeds.model` overrides `SCORING_MODEL` per feed, which is the way to A/B a
+cheaper model on one feed before switching everything.
+
+### Cost shape
+
+Scoring dominates: one call per new or changed event, roughly 4–6k input tokens
+each (the rubric plus the event's description), a few hundred out. Research is a
+second, smaller call per newly-seen person. At ~40 new events a day that is a few
+hundred thousand input tokens daily, so the per-million input price is what
+actually decides the bill.
+
+**Tool calling is required.** Structured output is forced via `tool_choice` on
+both paths; a host without function-call support will fall back to parsing JSON
+out of the reply, which is best-effort rather than guaranteed.

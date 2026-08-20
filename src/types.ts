@@ -14,6 +14,7 @@ export type SourceKind =
   | "luma_discover"
   | "luma_calendar"
   | "browser"
+  | "site_jsonld"
   | "api";
 
 export type Tier = "dont_miss" | "strong" | "radar";

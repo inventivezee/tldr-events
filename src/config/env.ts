@@ -6,7 +6,12 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   DATABASE_URL_UNPOOLED: z.string().optional(),
 
-  LLM_PROVIDER: z.enum(["anthropic", "openai", "google"]).default("anthropic"),
+  // "anthropic" uses the Claude SDK; anything else is treated as an
+  // OpenAI-compatible /chat/completions host (deepseek, qwen, openrouter,
+  // together, groq, openai, or a self-hosted one via LLM_BASE_URL). Free-form
+  // rather than an enum so a new host needs no code change.
+  LLM_PROVIDER: z.string().default("anthropic"),
+  LLM_BASE_URL: z.string().optional(),
   LLM_API_KEY: z.string().optional(),
   SCORING_MODEL: z.string().default("claude-opus-4-8"),
   RESEARCH_MODEL: z.string().default("claude-sonnet-5"),
