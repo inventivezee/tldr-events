@@ -159,7 +159,60 @@ export function defaultModel(kind: "scoring" | "research" = "scoring"): string {
   if (provider() === "anthropic") {
     return kind === "scoring" ? "claude-opus-4-8" : "claude-sonnet-5";
   }
-  return kind === "scoring" ? "deepseek-chat" : "deepseek-chat";
+  // Per HOST, not one guess for every OpenAI-compatible vendor: a DeepSeek model
+  // name sent to Groq is just as broken as a Claude name sent to DeepSeek.
+  const name = (process.env.LLM_PROVIDER || "").toLowerCase();
+  const known: Record<string, { scoring: string; research: string }> = {
+    deepseek: { scoring: "deepseek-v4-pro", research: "deepseek-v4-flash" },
+    openai: { scoring: "gpt-5", research: "gpt-5-mini" },
+    qwen: { scoring: "qwen3-max", research: "qwen3-flash" },
+    dashscope: { scoring: "qwen3-max", research: "qwen3-flash" },
+  };
+  const pick = known[name];
+  if (!pick) {
+    throw new Error(
+      `No default model for LLM_PROVIDER='${name}' — set SCORING_MODEL and RESEARCH_MODEL.`,
+    );
+  }
+  return pick[kind];
+}
+
+/** Which vendor a model NAME belongs to, judged by its prefix. */
+function modelFamily(model: string): Provider | null {
+  if (/^claude-/i.test(model)) return "anthropic";
+  if (/^(deepseek|gpt|o[0-9]|qwen|llama|mixtral|mistral|gemma)/i.test(model))
+    return "openai-compatible";
+  return null; // unrecognised — assume the operator knows their host
+}
+
+/**
+ * Resolve the model to call, refusing one that plainly belongs to a different
+ * vendor than the configured provider.
+ *
+ * This exists because of a real outage: `feeds.model` pinned "claude-opus-4-8"
+ * in the database and took precedence over SCORING_MODEL, so switching
+ * LLM_PROVIDER to deepseek sent a Claude model name to DeepSeek and every
+ * scoring call 400'd. A per-feed pin is a legitimate feature, but it must not
+ * outlive the provider it was written for.
+ */
+export function resolveModel(
+  pinned: string | null | undefined,
+  envValue: string | undefined,
+  kind: "scoring" | "research",
+): string {
+  const active = provider();
+  for (const candidate of [pinned?.trim(), envValue?.trim()]) {
+    if (!candidate) continue;
+    const family = modelFamily(candidate);
+    if (family && family !== active) {
+      log.error(
+        `model '${candidate}' is a ${family} model but LLM_PROVIDER resolves to ${active} — ignoring it and using the provider default. Clear the stale value.`,
+      );
+      continue;
+    }
+    return candidate;
+  }
+  return defaultModel(kind);
 }
 
 /**

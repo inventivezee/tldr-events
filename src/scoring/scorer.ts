@@ -9,7 +9,7 @@ import type { EventRow, FeedRow } from "@/db/schema";
 import type { PersonRef, ScoreResult } from "@/types";
 import { forwardWindow, fmtLocalDateTime } from "@/lib/time";
 import {
-  defaultModel,
+  resolveModel,
   structuredCall,
   llmConfigured,
   resetUsage,
@@ -331,7 +331,7 @@ async function scoreEvent(
 
   return scoreWithRubric({
     rubric: feed.scoringRubric,
-    model: feed.model || process.env.SCORING_MODEL || defaultModel("scoring"),
+    model: resolveModel(feed.model, process.env.SCORING_MODEL, "scoring"),
     title: e.title,
     startsAt: e.startsAt,
     tz,
@@ -433,7 +433,7 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
       relevant: r.industry_relevant !== false, // default to relevant when unsure
       tldr: r.tldr ?? null,
       signals: r.signals ?? {},
-      model: feed.model || process.env.SCORING_MODEL || defaultModel("scoring"),
+      model: resolveModel(feed.model, process.env.SCORING_MODEL, "scoring"),
       rubricVersion: feed.rubricVersion ?? 1,
       contentHash: e.contentHash,
       scoredAt: new Date(),
@@ -447,7 +447,7 @@ async function writeScore(feed: FeedRow, e: EventRow, r: ScoreResult): Promise<v
         relevant: r.industry_relevant !== false,
         tldr: r.tldr ?? null,
         signals: r.signals ?? {},
-        model: feed.model || process.env.SCORING_MODEL || defaultModel("scoring"),
+        model: resolveModel(feed.model, process.env.SCORING_MODEL, "scoring"),
         rubricVersion: feed.rubricVersion ?? 1,
         contentHash: e.contentHash,
         scoredAt: new Date(),

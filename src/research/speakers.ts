@@ -11,7 +11,7 @@ import {
   sleep,
   type BrowserSession,
 } from "@/lib/browserbase";
-import { defaultModel, llmConfigured, structuredCall, type ToolDef } from "@/lib/llm";
+import { resolveModel, llmConfigured, structuredCall, type ToolDef } from "@/lib/llm";
 import { normalizeName } from "@/lib/text";
 import { forwardWindow } from "@/lib/time";
 import { logger } from "@/lib/logger";
@@ -220,7 +220,7 @@ async function researchPerson(
     .slice(0, 6000);
 
   const profile = await structuredCall<PersonProfile & { found?: boolean }>({
-    model: process.env.RESEARCH_MODEL || defaultModel("research"),
+    model: resolveModel(null, process.env.RESEARCH_MODEL, "research"),
     system:
       "You synthesize concise professional profiles for a founder/investor events product. Judge notability from the reader's perspective. Use ONLY the provided search text; never invent facts. Be conservative with prominence.",
     user: `Person: ${c.name}\nContext: ${c.context}\n\nGoogle search text follows. Synthesize their profile.\n\n${sourcesText || "(no results captured)"}`,
