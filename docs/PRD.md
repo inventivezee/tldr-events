@@ -866,10 +866,16 @@ Defaults are per **host**, not per protocol: a DeepSeek model name sent to Groq 
 a Claude name sent to DeepSeek. A host with no built-in default demands `SCORING_MODEL` rather
 than guessing.
 
-Switching model does **not** re-score the existing catalogue — scoring is incremental, so bump
-`RUBRIC_VERSION` and the feed's `rubric_version` to force it. Re-scoring **overwrites** the
-previous scores (`scores` is keyed on `event_id + feed_id`), so snapshot the table before changing
-the model on a live board if the old ranking is worth keeping.
+Switching model **does** re-score the catalogue. `scores.model` is part of the staleness test
+alongside `content_hash` and `rubric_version`, because a change of model is a change of judgment:
+leaving old scores in place ranks events the new model has never seen against ones it has, which
+is not a ranking so much as two editors' opinions sorted into one list. The re-score is bounded by
+the batch size and `DAILY_SCORE_CAP`, and each old score stays visible until its replacement is
+written, so the board never empties mid-migration.
+
+Re-scoring **overwrites** (`scores` is keyed on `event_id + feed_id`), so snapshot the table before
+changing model on a live board if the old ranking is worth keeping:
+`create table scores_backup as select * from scores`.
 
 `GET /api/cron/llm-check` (cron-authed) reports the resolved provider, base URL, model names and
 key shape — never the key. `?live=1` makes one real call and returns the provider's own error,

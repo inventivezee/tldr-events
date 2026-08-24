@@ -83,6 +83,8 @@ const SCORE_TOOL: ToolDef = {
 export interface ScoreSummary {
   skipped?: string;
   feedId: string;
+  /** The model this run actually called. */
+  model?: string;
   candidates: number;
   /** How many of the candidates needed (re)scoring this run. */
   needed?: number;
@@ -127,6 +129,7 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
     };
   }
 
+  const activeModel = resolveModel(feed.model, process.env.SCORING_MODEL, "scoring");
   const now = new Date();
   const tz = await regionTz(feed.regionId ?? "sf_bay");
   const { start, end } = forwardWindow(now, tz, 21);
@@ -157,6 +160,12 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
     if (!s) return true;
     if (s.contentHash !== e.contentHash) return true;
     if ((s.rubricVersion ?? 0) !== (feed.rubricVersion ?? 1)) return true;
+    // A change of model is a change of judgment. Leaving old scores in place
+    // ranks events the new model has never seen against ones it has, which is
+    // not a ranking at all — it's two editors' opinions sorted into one list.
+    // Bounded by the batch size and DAILY_SCORE_CAP, and the old score stays
+    // visible until its replacement is written, so the board never empties.
+    if (s.model && s.model !== activeModel) return true;
     return false;
   });
 
@@ -206,6 +215,7 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
   }
   return {
     feedId: feed.id,
+    model: activeModel,
     candidates: candidates.length,
     needed: needScore.length,
     scored,
