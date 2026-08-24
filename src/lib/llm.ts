@@ -257,3 +257,60 @@ function describe(e: unknown): string {
   if (e instanceof Error) return e.message;
   return String(e);
 }
+
+/**
+ * What this runtime is actually configured to talk to — safe to return over an
+ * authenticated endpoint. Never includes the key itself, only its shape, which
+ * is enough to tell "wrong key" from "no key" from "key for the other vendor".
+ *
+ * This exists because a provider switch fails silently otherwise: the scorer
+ * catches per-event errors, so a misconfigured host returns `scored: 0` with a
+ * 200 and looks like "nothing to do".
+ */
+export function configSummary() {
+  const key = process.env.LLM_API_KEY?.trim() ?? "";
+  let base: string | null = null;
+  let baseError: string | null = null;
+  if (provider() === "openai-compatible") {
+    try {
+      base = baseUrl();
+    } catch (e) {
+      baseError = describe(e);
+    }
+  }
+  return {
+    llmProvider: process.env.LLM_PROVIDER || "(unset → anthropic)",
+    resolvedProtocol: provider(),
+    baseUrl: base,
+    baseUrlError: baseError,
+    scoringModel: process.env.SCORING_MODEL || defaultModel("scoring"),
+    researchModel: process.env.RESEARCH_MODEL || defaultModel("research"),
+    apiKey: key
+      ? { present: true, prefix: key.slice(0, 6), length: key.length }
+      : { present: false },
+  };
+}
+
+/** One minimal live call, so a broken provider reports its real error instead of
+ *  being swallowed into a zero-score run. */
+export async function selfTest(): Promise<{ ok: boolean; error?: string; sample?: unknown }> {
+  try {
+    const sample = await structuredCall({
+      system: "You are a connectivity check. Always call the tool.",
+      user: "Call the tool with ok=true.",
+      maxTokens: 128,
+      tool: {
+        name: "report",
+        description: "Report that the call succeeded.",
+        input_schema: {
+          type: "object",
+          properties: { ok: { type: "boolean" } },
+          required: ["ok"],
+        },
+      },
+    });
+    return { ok: true, sample };
+  } catch (e) {
+    return { ok: false, error: describe(e) };
+  }
+}

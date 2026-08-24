@@ -151,3 +151,37 @@ describe("pipeline stage completion", () => {
     }
   });
 });
+
+describe("a stuck queue stage must not take the digest off the air", () => {
+  // 2026-08-23: the provider switch left every scoring call failing. `score`
+  // still reported a backlog, so it sat at the head of the pending list on every
+  // tick and runPipelineTick returned before ever reaching the digest. The daily
+  // post silently stopped. The digest is the product — it cannot depend on
+  // scoring being healthy.
+  const score = STAGES.find((s) => s.name === "score")!;
+
+  it("treats a zero-scored run as no progress", () => {
+    expect(score.progressed).toBeTypeOf("function");
+    expect(score.progressed!([{ feedId: "bay_founder", candidates: 382, scored: 0 }])).toBe(false);
+  });
+
+  it("treats a run that scored something as progress", () => {
+    expect(score.progressed!([{ feedId: "bay_founder", candidates: 382, scored: 12 }])).toBe(true);
+  });
+
+  it("counts progress if any feed moved", () => {
+    expect(score.progressed!([{ scored: 0 }, { scored: 3 }])).toBe(true);
+  });
+
+  it("survives a malformed or empty result rather than claiming progress", () => {
+    expect(score.progressed!(undefined)).toBe(false);
+    expect(score.progressed!([])).toBe(false);
+    expect(score.progressed!([{}])).toBe(false);
+  });
+
+  it("only applies to queue stages — a once-daily stage has no progress notion", () => {
+    for (const s of STAGES.filter((s) => !s.hasBacklog)) {
+      expect(s.progressed, `${s.name}`).toBeUndefined();
+    }
+  });
+});

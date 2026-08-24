@@ -53,6 +53,12 @@ export interface Stage {
    * draining a backlog is not gathering.
    */
   hasBacklog?: () => Promise<boolean>;
+  /**
+   * For a queue stage: did this run actually shift the queue? A backlog stage
+   * that reports no progress is stuck, and must not be retried ahead of the
+   * digest for the rest of the tick (see runPipelineTick).
+   */
+  progressed?: (result: unknown) => boolean;
 }
 
 /** Ceiling on scoring work per local day, so a permanently-failing event can't
@@ -97,6 +103,12 @@ export const STAGES: Stage[] = [
     // permanent backlog (327 of 377 events unscored, i.e. invisible to the site
     // and the digest). It now keeps going until the queue is empty.
     hasBacklog: scoringBacklog,
+    // A run that scores nothing has not drained anything. Without this, a
+    // provider outage pinned `score` at the head of the pending list on every
+    // tick and the digest below was never reached — one broken API key silently
+    // took the daily post off the air.
+    progressed: (r) =>
+      Array.isArray(r) && (r as { scored?: number }[]).some((x) => (x?.scored ?? 0) > 0),
   },
 ];
 
@@ -127,8 +139,14 @@ export interface TickResult {
   ran: string | null;
   result?: unknown;
   skipped?: string;
+  /** A queue stage that ran but drained nothing — see runPipelineTick. */
+  stalled?: string;
+  digest?: unknown;
   pending?: string[];
 }
+
+/** Only chase the digest after a stalled stage if the tick still has room. */
+const STUCK_FALLTHROUGH_MS = 200_000;
 
 /**
  * What still needs doing: stages not yet attempted today (only once the gather
@@ -168,13 +186,31 @@ export async function runPipelineTick(opts?: { force?: boolean; now?: Date }): P
   const gathering = opts?.force || hour >= PIPELINE_START_HOUR;
   const pending = await pendingStages(now, gathering);
 
+  const started = Date.now();
   if (pending.length) {
     const stage = STAGES.find((s) => s.name === pending[0])!;
     log.info(`tick: running ${stage.name} (pending: ${pending.join(", ")})`);
     const r = await withJobLock(stage.name, stage.ttl, stage.run);
-    return r.ran
-      ? { ran: stage.name, result: r.result, pending: pending.slice(1) }
-      : { ran: null, skipped: `${stage.name} locked`, pending };
+    if (!r.ran) return { ran: null, skipped: `${stage.name} locked`, pending };
+
+    // A queue stage that made no progress is stuck. Fall through to the digest
+    // rather than letting it hold the head of the queue forever — the digest is
+    // the product, and it must not depend on scoring being healthy. Guarded on
+    // elapsed time so a genuinely slow stage can't push the tick past its limit.
+    const stuck = !!stage.hasBacklog && stage.progressed?.(r.result) === false;
+    const timeLeft = Date.now() - started < STUCK_FALLTHROUGH_MS;
+    if (!stuck || !timeLeft) {
+      return { ran: stage.name, result: r.result, pending: pending.slice(1) };
+    }
+    log.warn(`tick: ${stage.name} made no progress — falling through to the digest`);
+    const d = await withJobLock("digest", LOCK_TTL.digest, () => runDigestPoster());
+    return {
+      ran: stage.name,
+      result: r.result,
+      stalled: stage.name,
+      digest: d.ran ? d.result : "locked",
+      pending: pending.slice(1),
+    };
   }
 
   // Nothing left to gather — let the poster decide if a digest is due.

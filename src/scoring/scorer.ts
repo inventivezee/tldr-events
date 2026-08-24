@@ -84,7 +84,14 @@ export interface ScoreSummary {
   skipped?: string;
   feedId: string;
   candidates: number;
+  /** How many of the candidates needed (re)scoring this run. */
+  needed?: number;
   scored: number;
+  /** Events whose scoring call threw. Non-zero here with scored=0 means the
+   *  provider is unreachable/misconfigured, NOT that there was nothing to do. */
+  failed?: number;
+  /** First failure's message, so the cause is visible without log diving. */
+  error?: string;
   tokens: { input: number; output: number };
 }
 
@@ -162,6 +169,8 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
 
   resetUsage();
   let scored = 0;
+  let failed = 0;
+  let firstError: string | undefined;
   // Score with bounded concurrency — the editorial calls are independent, so a
   // small pool cuts wall-clock (a full re-score of a 300+ event window) without
   // risking API rate limits. Each event's write follows its own score.
@@ -176,6 +185,12 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
           await writeScore(feed, e, result);
           scored++;
         } catch (err) {
+          failed++;
+          // A per-event catch keeps one bad event from killing the batch, but it
+          // also hid a total outage: after the provider switch every call threw
+          // and the run still reported `scored: 0` with a 200, which reads as
+          // "nothing to do". Keep the first message so the summary can say so.
+          firstError ??= err instanceof Error ? err.message : String(err);
           log.warn(`score failed for event ${e.id} (${e.title})`, err);
         }
       }
@@ -184,12 +199,17 @@ async function scoreFeed(feed: FeedRow, batchArg?: number): Promise<ScoreSummary
 
   const tok = usage();
   log.info(
-    `scorer[${feed.id}]: scored ${scored}/${needScore.length} needing (of ${candidates.length} candidates); tokens in=${tok.input} out=${tok.output}`,
+    `scorer[${feed.id}]: scored ${scored}/${needScore.length} needing (of ${candidates.length} candidates), ${failed} failed; tokens in=${tok.input} out=${tok.output}`,
   );
+  if (failed && !scored) {
+    log.error(`scorer[${feed.id}]: EVERY scoring call failed — ${firstError}`);
+  }
   return {
     feedId: feed.id,
     candidates: candidates.length,
+    needed: needScore.length,
     scored,
+    ...(failed ? { failed, error: firstError } : {}),
     tokens: tok,
   };
 }
