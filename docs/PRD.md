@@ -881,6 +881,21 @@ changing model on a live board if the old ranking is worth keeping:
 key shape — never the key. `?live=1` makes one real call and returns the provider's own error,
 which is the fastest way to tell "wrong key" from "wrong model name" from "wrong host".
 
+**Batch size is a function of the model, not a constant.** `SCORE_BATCH` × per-event latency has
+to fit inside the route's `maxDuration` (300s), and a reasoning model changes that arithmetic
+sharply. Measured on the same 40 events:
+
+| | input/event | output/event | latency/event | batch of 40 |
+|---|---|---|---|---|
+| `deepseek-chat` | 2,725 | 219 | 0.6s | 24s |
+| `deepseek-v4-pro` | 3,270 | 1,282 | 5.8s | **231s — 77% of the limit** |
+
+Thinking is nearly all of that: ~6× the output tokens and ~10× the wall clock for ~1.2× the input.
+A batch sized for a direct model runs a reasoning model to the edge of the function limit, where
+one slow call loses the whole batch. Pro therefore runs `SCORE_BATCH=24` with
+`SCORE_CONCURRENCY=6` (~92s). **Re-measure both when changing model** — the numbers above are the
+method, not a constant.
+
 **Cost shape.** Scoring dominates: one call per new/changed event at roughly 4–6k input tokens
 (rubric + description), a few hundred out. Research is a second, smaller call per newly-seen
 person. At ~40 new events a day the per-million *input* price is what decides the bill.
