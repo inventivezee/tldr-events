@@ -229,10 +229,6 @@ async function structuredCallOpenAI<T>(
   maxTokens: number,
 ): Promise<T> {
   const url = `${baseUrl()}/chat/completions`;
-  const messages: { role: string; content: string }[] = [];
-  if (opts.system) messages.push({ role: "system", content: opts.system });
-  messages.push({ role: "user", content: opts.user });
-
   const tools = [
     {
       type: "function",
@@ -250,26 +246,43 @@ async function structuredCallOpenAI<T>(
   // ordinary models; when a host refuses it we drop to "auto" and lean on the
   // JSON salvage below, rather than losing the event.
   let forceTool = true;
+  let useJsonMode = true;
+
+  // Unforced mode has to ask for the object in the prompt: the tool is no longer
+  // mandatory, and DeepSeek rejects `response_format: json_object` outright
+  // unless the word "json" appears in the messages. Naming the schema here also
+  // makes the salvage path far more likely to find a well-shaped object.
+  const jsonInstruction =
+    `Call the \`${opts.tool.name}\` function. If you cannot call a function, reply with ` +
+    `a single JSON object and nothing else — no prose, no markdown fence — matching ` +
+    `this JSON schema:\n${JSON.stringify(opts.tool.input_schema)}`;
+
+  const buildMessages = () => {
+    const m: { role: string; content: string }[] = [];
+    if (opts.system) m.push({ role: "system", content: opts.system });
+    m.push({ role: "user", content: forceTool ? opts.user : `${opts.user}\n\n${jsonInstruction}` });
+    return m;
+  };
+
   const buildBody = () => ({
     model,
     // Thinking models spend tokens reasoning before the answer, so the same
     // budget that fits a direct reply can truncate one mid-object.
     max_tokens: forceTool ? maxTokens : Math.max(maxTokens, THINKING_MAX_TOKENS),
-    messages,
+    messages: buildMessages(),
     tools,
     tool_choice: forceTool ? { type: "function", function: { name: opts.tool.name } } : "auto",
     ...(forceTool
       ? {}
       : {
-          // Without a forced call the model has to be told to use the tool.
           // Belt and braces: many hosts honour this, and the ones that don't
           // still tend to emit the object as JSON, which parseLooseJson takes.
-          response_format: { type: "json_object" as const },
+          ...(useJsonMode ? { response_format: { type: "json_object" as const } } : {}),
         }),
   });
 
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 4; attempt++) {
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -286,6 +299,13 @@ async function structuredCallOpenAI<T>(
         if (res.status === 400 && forceTool && /tool_choice|thinking mode/i.test(text)) {
           log.info(`${model} rejects a forced tool call — retrying with tool_choice=auto`);
           forceTool = false;
+          continue;
+        }
+        // Some hosts don't implement response_format at all. The prompt already
+        // asks for the object, so drop the hint rather than the event.
+        if (res.status === 400 && !forceTool && useJsonMode && /response_format/i.test(text)) {
+          log.info(`${model} rejects response_format — retrying on the prompt alone`);
+          useJsonMode = false;
           continue;
         }
         throw new Error(`LLM ${res.status}: ${text}`);

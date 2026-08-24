@@ -194,3 +194,49 @@ describe("reasoning models that refuse a forced tool call", () => {
   });
 });
 
+describe("json_object mode requirements", () => {
+  const THINKING_400 = {
+    status: 400,
+    json: { error: { message: "Thinking mode does not support this tool_choice" } },
+  };
+
+  it("names JSON and the schema in the unforced prompt", async () => {
+    // DeepSeek refuses response_format:json_object unless the word "json"
+    // appears in the messages: 400 "Prompt must contain the word 'json'".
+    const bodies: any[] = [];
+    await mockProvider((body) => {
+      bodies.push(body);
+      if (body.tool_choice && body.tool_choice !== "auto") return THINKING_400;
+      return toolReply({ score: 7 });
+    });
+    const { structuredCall } = await import("@/lib/llm");
+    await structuredCall({ user: "rate it", tool: TOOL, model: "deepseek-v4-pro" });
+
+    const forced = bodies[0].messages.at(-1).content;
+    const unforced = bodies[1].messages.at(-1).content;
+    expect(forced).toBe("rate it"); // forced mode leaves the prompt alone
+    expect(unforced).toMatch(/json/i);
+    expect(unforced).toContain("record_score");
+    expect(bodies[1].response_format).toEqual({ type: "json_object" });
+  });
+
+  it("drops response_format for a host that does not implement it", async () => {
+    const bodies: any[] = [];
+    await mockProvider((body) => {
+      bodies.push(body);
+      if (body.tool_choice && body.tool_choice !== "auto") return THINKING_400;
+      if (body.response_format)
+        return { status: 400, json: { error: { message: "response_format is not supported" } } };
+      return toolReply({ score: 4.2 });
+    });
+    const { structuredCall } = await import("@/lib/llm");
+    expect(await structuredCall({ user: "hi", tool: TOOL, model: "some-model" })).toEqual({
+      score: 4.2,
+    });
+    expect(bodies).toHaveLength(3);
+    expect(bodies[2].response_format).toBeUndefined();
+    // The prompt still carries the instruction, so the object is still asked for.
+    expect(bodies[2].messages.at(-1).content).toMatch(/json/i);
+  });
+});
+
