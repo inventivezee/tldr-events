@@ -846,18 +846,34 @@ across those hosts and only one forced tool call is needed.
 ```
 LLM_PROVIDER=deepseek      LLM_PROVIDER=qwen
 LLM_API_KEY=sk-...         LLM_API_KEY=sk-...
-SCORING_MODEL=deepseek-chat  SCORING_MODEL=qwen-plus
-RESEARCH_MODEL=deepseek-chat RESEARCH_MODEL=qwen-turbo
+SCORING_MODEL=deepseek-v4-pro    SCORING_MODEL=qwen3-max
+RESEARCH_MODEL=deepseek-v4-flash RESEARCH_MODEL=qwen3-flash
 ```
 
 Structured output is forced via `tool_choice` on both paths, with JSON salvaged from a prose
 reply as a fallback — cheaper models are exactly where that happens, and losing the event would
 be worse. **Tool calling is effectively required**; a host without it degrades to best-effort.
 
-Two operational notes: switching model does **not** re-score the existing catalogue (scoring is
-incremental — bump `RUBRIC_VERSION` and the feed's `rubric_version` to force it), and
-`feeds.model` overrides `SCORING_MODEL` per feed, which is how to A/B a cheaper model on one
-feed before committing.
+Model names are resolved `feeds.model` → `SCORING_MODEL` → per-host default. The per-feed pin is
+how to A/B a cheaper model on one feed before committing — but **a pin must not outlive the
+provider it was written for**, and one did: `feeds.model` held `claude-opus-4-8`, so switching
+`LLM_PROVIDER` to `deepseek` kept sending a Claude model name to DeepSeek. Every scoring call
+returned 400 while the credentials, base URL and env vars were all correct. `resolveModel()` now
+drops a model whose name plainly belongs to another vendor, names the stale value in an error
+log, and falls back to the provider's default.
+
+Defaults are per **host**, not per protocol: a DeepSeek model name sent to Groq fails exactly like
+a Claude name sent to DeepSeek. A host with no built-in default demands `SCORING_MODEL` rather
+than guessing.
+
+Switching model does **not** re-score the existing catalogue — scoring is incremental, so bump
+`RUBRIC_VERSION` and the feed's `rubric_version` to force it. Re-scoring **overwrites** the
+previous scores (`scores` is keyed on `event_id + feed_id`), so snapshot the table before changing
+the model on a live board if the old ranking is worth keeping.
+
+`GET /api/cron/llm-check` (cron-authed) reports the resolved provider, base URL, model names and
+key shape — never the key. `?live=1` makes one real call and returns the provider's own error,
+which is the fastest way to tell "wrong key" from "wrong model name" from "wrong host".
 
 **Cost shape.** Scoring dominates: one call per new/changed event at roughly 4–6k input tokens
 (rubric + description), a few hundred out. Research is a second, smaller call per newly-seen
