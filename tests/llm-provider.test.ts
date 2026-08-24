@@ -101,3 +101,96 @@ describe("OpenAI-compatible provider (DeepSeek / Qwen / OpenRouter)", () => {
     expect(provider()).toBe("anthropic");
   });
 });
+
+describe("reasoning models that refuse a forced tool call", () => {
+  // DeepSeek's v4-pro answers a forced tool_choice with
+  // 400 "Thinking mode does not support this tool_choice". Forcing stays the
+  // default (it is what guarantees a parseable object on ordinary models), so
+  // the client has to notice the refusal and drop to tool_choice=auto rather
+  // than failing every event — which is exactly what it did on 2026-08-23.
+  const THINKING_400 = {
+    status: 400,
+    json: {
+      error: {
+        message: "Thinking mode does not support this tool_choice",
+        type: "invalid_request_error",
+      },
+    },
+  };
+
+  it("retries unforced and still returns the object", async () => {
+    const bodies: any[] = [];
+    const { seen } = await mockProvider((body) => {
+      bodies.push(body);
+      if (body.tool_choice && body.tool_choice !== "auto") return THINKING_400;
+      return toolReply({ score: 8.1 });
+    });
+    const { structuredCall } = await import("@/lib/llm");
+
+    const out = await structuredCall({ user: "hi", tool: TOOL, model: "deepseek-v4-pro" });
+    expect(out).toEqual({ score: 8.1 });
+
+    expect(bodies).toHaveLength(2);
+    expect(bodies[0].tool_choice).toEqual({ type: "function", function: { name: "record_score" } });
+    expect(bodies[1].tool_choice).toBe("auto");
+    expect(seen().model).toBe("deepseek-v4-pro");
+  });
+
+  it("gives the retry more room, since thinking spends tokens before the answer", async () => {
+    const bodies: any[] = [];
+    await mockProvider((body) => {
+      bodies.push(body);
+      if (body.tool_choice && body.tool_choice !== "auto") return THINKING_400;
+      return toolReply({ score: 6 });
+    });
+    const { structuredCall } = await import("@/lib/llm");
+    await structuredCall({ user: "hi", tool: TOOL, model: "deepseek-v4-pro", maxTokens: 900 });
+
+    expect(bodies[0].max_tokens).toBe(900);
+    expect(bodies[1].max_tokens).toBeGreaterThan(900);
+  });
+
+  it("salvages JSON from content when the unforced model answers in prose", async () => {
+    await mockProvider((body) => {
+      if (body.tool_choice && body.tool_choice !== "auto") return THINKING_400;
+      return {
+        json: {
+          choices: [{ message: { content: '```json\n{"score": 5.5}\n```' } }],
+          usage: { prompt_tokens: 10, completion_tokens: 5 },
+        },
+      };
+    });
+    const { structuredCall } = await import("@/lib/llm");
+    expect(await structuredCall({ user: "hi", tool: TOOL, model: "deepseek-v4-pro" })).toEqual({
+      score: 5.5,
+    });
+  });
+
+  it("reads the answer out of reasoning_content when a host puts it there", async () => {
+    await mockProvider((body) => {
+      if (body.tool_choice && body.tool_choice !== "auto") return THINKING_400;
+      return {
+        json: {
+          choices: [{ message: { content: "", reasoning_content: '{"score": 9.1}' } }],
+          usage: {},
+        },
+      };
+    });
+    const { structuredCall } = await import("@/lib/llm");
+    expect(await structuredCall({ user: "hi", tool: TOOL, model: "deepseek-v4-pro" })).toEqual({
+      score: 9.1,
+    });
+  });
+
+  it("does not swallow an unrelated 400", async () => {
+    await mockProvider(() => ({
+      status: 400,
+      json: { error: { message: "Insufficient Balance", type: "invalid_request_error" } },
+    }));
+    const { structuredCall } = await import("@/lib/llm");
+    await expect(
+      structuredCall({ user: "hi", tool: TOOL, model: "deepseek-v4-pro" }),
+    ).rejects.toThrow(/Insufficient Balance/);
+  });
+});
+

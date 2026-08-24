@@ -233,25 +233,43 @@ async function structuredCallOpenAI<T>(
   if (opts.system) messages.push({ role: "system", content: opts.system });
   messages.push({ role: "user", content: opts.user });
 
-  const body = {
-    model,
-    max_tokens: maxTokens,
-    messages,
-    tools: [
-      {
-        type: "function",
-        function: {
-          name: opts.tool.name,
-          description: opts.tool.description,
-          parameters: opts.tool.input_schema,
-        },
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: opts.tool.name,
+        description: opts.tool.description,
+        parameters: opts.tool.input_schema,
       },
-    ],
-    tool_choice: { type: "function", function: { name: opts.tool.name } },
-  };
+    },
+  ];
+
+  // Reasoning models reject a FORCED tool call — DeepSeek's v4-pro answers
+  // "Thinking mode does not support this tool_choice" with a 400. Forcing is
+  // still the default because it is what guarantees a parseable object on
+  // ordinary models; when a host refuses it we drop to "auto" and lean on the
+  // JSON salvage below, rather than losing the event.
+  let forceTool = true;
+  const buildBody = () => ({
+    model,
+    // Thinking models spend tokens reasoning before the answer, so the same
+    // budget that fits a direct reply can truncate one mid-object.
+    max_tokens: forceTool ? maxTokens : Math.max(maxTokens, THINKING_MAX_TOKENS),
+    messages,
+    tools,
+    tool_choice: forceTool ? { type: "function", function: { name: opts.tool.name } } : "auto",
+    ...(forceTool
+      ? {}
+      : {
+          // Without a forced call the model has to be told to use the tool.
+          // Belt and braces: many hosts honour this, and the ones that don't
+          // still tend to emit the object as JSON, which parseLooseJson takes.
+          response_format: { type: "json_object" as const },
+        }),
+  });
 
   let lastErr: unknown;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -259,14 +277,27 @@ async function structuredCallOpenAI<T>(
           "content-type": "application/json",
           authorization: `Bearer ${process.env.LLM_API_KEY ?? ""}`,
         },
-        body: JSON.stringify(body),
+        body: JSON.stringify(buildBody()),
         signal: AbortSignal.timeout(90000),
       });
       if (!res.ok) {
-        throw new Error(`LLM ${res.status}: ${(await res.text()).slice(0, 300)}`);
+        const text = (await res.text()).slice(0, 300);
+        // Retry the SAME attempt unforced rather than burning a retry slot.
+        if (res.status === 400 && forceTool && /tool_choice|thinking mode/i.test(text)) {
+          log.info(`${model} rejects a forced tool call — retrying with tool_choice=auto`);
+          forceTool = false;
+          continue;
+        }
+        throw new Error(`LLM ${res.status}: ${text}`);
       }
       const json = (await res.json()) as {
-        choices?: { message?: { content?: string; tool_calls?: { function?: { arguments?: string } }[] } }[];
+        choices?: {
+          message?: {
+            content?: string;
+            reasoning_content?: string;
+            tool_calls?: { function?: { arguments?: string } }[];
+          };
+        }[];
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
       _in += json.usage?.prompt_tokens ?? 0;
@@ -276,7 +307,9 @@ async function structuredCallOpenAI<T>(
       const args = msg?.tool_calls?.[0]?.function?.arguments;
       if (args) return JSON.parse(args) as T;
 
-      const salvaged = parseLooseJson(msg?.content ?? "");
+      // `content` first; a reasoning model puts its thinking in a separate field
+      // and the answer in content, but not every host follows that split.
+      const salvaged = parseLooseJson(msg?.content ?? "") ?? parseLooseJson(msg?.reasoning_content ?? "");
       if (salvaged) return salvaged as T;
       throw new Error("model returned neither a tool call nor parseable JSON");
     } catch (e) {
@@ -287,6 +320,9 @@ async function structuredCallOpenAI<T>(
   }
   throw lastErr;
 }
+
+/** Reasoning models need room for the thinking that precedes the answer. */
+const THINKING_MAX_TOKENS = 4096;
 
 /** Pull a JSON object out of a prose reply, including one fenced in markdown. */
 function parseLooseJson(text: string): unknown | null {
