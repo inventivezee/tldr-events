@@ -1,25 +1,51 @@
 # TLDR Events
-### Product Requirements Document — v5.1
+### Product Requirements Document — v6
 
 *The best events for founders and investors — curated, scored, and summarized. Skip the firehose.*
 
-**July 2026**
+**Updated August 2026**
 
 ---
 
-## 0. Implementation status (v5.1 — as built)
+## 0. Implementation status (v6 — as built)
 
-Phase 1 is **built and deployed**. Key deltas from the v5 spec, reflecting real implementation decisions:
+Phase 1 is **built, deployed and running daily**. This section is the authority where it
+disagrees with the original v5 spec below; the later sections have been updated in place
+where the delta is structural.
 
-- **Stack:** a single **all-TypeScript Next.js (App Router)** app — web, Telegram webhook, read APIs, and the whole ingestion→dedup→research→scoring pipeline (as protected cron endpoints). No separate Python service.
-- **Hosting:** **Vercel** (git-connected auto-deploy from GitHub) with **Vercel Cron** on the Pro plan; **Supabase Postgres** as the store (connected via the Supavisor transaction pooler; direct Postgres, `postgres.js` — not the Supabase client SDK).
-- **Scraping/LLM:** **Browserbase** (residential proxies always on) + `playwright-core`; **Anthropic Claude** — `claude-opus-4-8` scoring, `claude-sonnet-5` research synthesis.
-- **Tiers:** the top tier is labeled **"Must Attend"** (🔥), then **Strong Pick** (⭐), then **Worth a Look** (👀).
-- **Web front end:** four ranked views — **Today · Tomorrow · This Week · Next Week** — each scored out of 10, tier-grouped, with category tags and click-through to the source in a new tab (see §13).
-- **Telegram:** launched to a **public group** (`@BayAreaTLDRevents`) rather than a channel — functionally identical for posting.
-- **Live source yields (per run):** Luma ~210, Eventbrite ~107, Cerebral Valley ~135, Partiful ~44; Google is gated by its bot-wall (needs Browserbase Enterprise stealth) and remains an optional supplement.
+### Stack & hosting
+- **One all-TypeScript Next.js (App Router) app** — web, Telegram webhook, read APIs and the
+  whole ingestion→dedup→research→scoring pipeline (as protected cron endpoints). No separate
+  Python service.
+- **Vercel** (git-connected auto-deploy) + **Supabase Postgres** via the Supavisor transaction
+  pooler — direct Postgres with `postgres.js`, not the Supabase client SDK.
+- **Browserbase** (residential proxies always on) + `playwright-core` for browser sources.
+- Custom domain **tldrevents.com** (apex serves; `www` redirects).
 
-The sections below are the original v5 spec; where they say "channel," read "channel or group," and where they say "Don't Miss," read "Must Attend."
+### What changed most from v5
+- **Scoring weights speakers far above hosts.** v5 treated "who's in the room" as the dominant
+  signal; in practice attendee lists are rarely public and organisers appear on every listing,
+  so weighting the room inflated ordinary meetups and buried strong events with unlisted rooms.
+  The rubric (v6) now drives the score from relevance, format, topic and apparent quality, with
+  a **billed speaker** as a strong bonus and the **organiser** a mild one. An unknown room never
+  caps or lowers a score. See §11.2.
+- **Model provider is configurable.** Claude by default; any OpenAI-compatible host (DeepSeek,
+  Qwen, OpenRouter, Together, Groq, self-hosted) via `LLM_PROVIDER`. See §17.
+- **One cron, not six.** Vercel dropped scheduled ticks in two distinct ways, so the pipeline is
+  a single job that advances one stage per tick. See §16.
+- **Telegram is one compact message**, no inline buttons, direct source links, no per-event
+  summary. See §12.
+- **The web board gained a calendar, per-day pages and a 6.5 visible floor.** See §13.
+- **SEO/answer-engine surface** — schema.org Event markup, canonical URLs, `llms.txt`. See §13.1.
+
+### Live shape (August 2026)
+- ~370 primary events in the 21-day scoring window; ~11 sources.
+- Tiers: 🔥 **Must Attend** (8–10), ⭐ **Strong Pick** (6–7.9), 👀 **Worth a Look** (<6).
+- Telegram: public **group** `@sfbayareaevents` (a group, not a channel — functionally identical
+  for posting), daily digest 17:30 PT covering **tomorrow**, weekly Sunday 18:00 PT.
+
+Where the sections below say "channel," read "channel or group"; where they say "Don't Miss,"
+read "Must Attend."
 
 ---
 
@@ -390,27 +416,62 @@ insert into feeds (id, name, region_id, categories, source_ids, curator, model, 
 ## 9. Ingestion
 
 ### 9.1 Sources & fetch operations
-The 8 launch sources map to 5 operations:
 
 | Operation | Method | Sources covered |
 |-----------|--------|-----------------|
-| 1 | Luma API (HTTP) | `luma_sf_discover` + 3 calendars |
-| 2 | Browser scrape | `cerebral_valley` |
-| 3 | Browser scrape | `eventbrite_bay` (multi-city) |
-| 4 | Browser scrape | `partiful_sf` |
-| 5 | Browser scrape (Google, via Browserbase) | `google_sf` |
+| 1 | Luma API (HTTP) | `luma_sf_discover` + 5 calendars (Founders Club, Founders Bay, Frontier Tower, ClawCamp) |
+| 2 | Site JSON-LD (HTTP) | `conference_sites` — standalone conference domains |
+| 3 | Browser scrape | `supermomos_sf` |
+| 4 | Browser scrape | `cerebral_valley` |
+| 5 | Browser scrape | `eventbrite_bay` (multi-city) |
+| 6 | Browser scrape | `partiful_sf` |
+| 7 | Browser scrape | `evion_sf` (aggregator) |
+| 8 | Browser scrape (Google, via Browserbase) | `google_sf` |
 
-(Speaker research also uses Browserbase + Google, but as a pipeline step — §11.3 — not one of the event-fetch operations.)
+(Speaker research also uses Browserbase + Google, but as a pipeline step — §11.3 — not one of
+the event-fetch operations.)
+
+**`site_jsonld` — standalone conference sites.** A conference on its own domain is on no
+platform we scrape. Rather than a scraper per conference, this reads the schema.org `Event`
+markup such sites already publish for Google's event rich results, so tracking a new one is a
+URL in config. A plain fetch, since JSON-LD is in the served HTML.
+
+**Aggregators relist, they don't duplicate.** Evion links out to the ORIGINAL event page, so its
+rows collapse into ours via URL dedup (§10). Its real contribution is Evion-hosted events plus
+platforms we don't scrape directly.
+
+**Region guard.** A followed calendar is not a place — the same organiser runs SF events and
+"ClawCamp Nairobi" — and an aggregator's ordering depends on where the scraper's proxy exited.
+Every global source therefore checks each row against a Bay Area matcher before emitting it,
+failing OPEN when no location is given so listings without a city aren't lost.
+
+**Known coverage gap.** Luma's SF discover feed returns only ~70 upcoming events, so anything on
+a Luma calendar we don't follow is invisible unless an aggregator relists it. Adding calendars
+is the cheap fix; the `site_jsonld` kind and the conference-tier Google queries cover the
+self-hosted end.
+
+**Luma specifics.** The list endpoints omit attendance and the full host/guest list, and their
+description is a ~150-char teaser. Attendance, hosts and exact times come from the detail
+endpoint (which accepts a public slug as well as an api_id); the full description comes from the
+event page's JSON-LD. Page loads are rate-limited far harder than the API, so descriptions are
+fetched slowly, capped per run and circuit-broken on the first 429, catching up across days.
+API calls retry 429/5xx with backoff and `Retry-After` — a dropped call used to silently lose an
+event's attendance rather than raise an error.
 
 ### 9.2 Adapter contract
 Every source implements an async adapter keyed by `kind`:
-```python
-async def fetch(source: SourceRow) -> list[NormalizedEvent]:
-    # Returns events with: title, url, status, starts_at (UTC), ends_at, venue_name,
-    # address, city, region_id, description, hosts, speakers, guest_count,
-    # categories, source_event_id, raw
+```ts
+type Adapter = (source: SourceRow) => Promise<NormalizedEvent[]>;
+// NormalizedEvent: title, url, status, startsAt (UTC), endsAt, venueName,
+// address, city, regionId, description, hosts, speakers, guestCount,
+// categories, sourceEventId, raw
 ```
 The runner normalizes title/venue, computes `content_hash`, and upserts on `(source_id, source_event_id)`. Cancellations/postponements set `status`. Detailed extraction per source is in **Appendix A**.
+
+Adapters that pull a whole region (`luma_discover`, `browser` search pages, `site_jsonld`) apply a
+**Bay Area guard** before emitting, since one calendar can host events in three countries. The
+guard reads city/address/venue and drops what is plainly elsewhere rather than what is merely
+unlabelled — an event with no location survives to scoring, where it can be judged.
 
 ### 9.3 Source strategy & resilience
 Each source sits behind its own adapter so one platform's change can't cascade.
@@ -421,24 +482,19 @@ Each source sits behind its own adapter so one platform's change can't cascade.
 - **Publishing responsibly.** Surfaces link out to the source, show short snippets not full descriptions, and attribute the source.
 
 ### 9.4 Timezone normalization at ingest
-Every source time is converted to **UTC at ingest** with IANA timezone data; naive times are localized to the source/region tz first. Luma is UTC; Partiful is mixed; Eventbrite is local display. All paths end in UTC, DST handled automatically, no hardcoded offsets.
-```python
-from datetime import datetime
-from zoneinfo import ZoneInfo
-def to_utc(raw_dt: str, source_tz: str | None) -> datetime:
-    dt = parse_datetime(raw_dt)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=ZoneInfo(source_tz or "America/Los_Angeles"))
-    return dt.astimezone(ZoneInfo("UTC"))
-```
+Every source time is converted to **UTC at ingest** with IANA timezone data; naive times are
+localized to the source/region tz first. Luma is UTC; Partiful is mixed; Eventbrite is local
+display. All paths end in UTC, DST handled automatically, no hardcoded offsets.
 
-### 9.5 Category tagging
-At ingest, assign `categories[]` heuristically (optionally a cheap model pass): `ai`, `longevity`, `fintech_blockchain`, `founder_investor`, `hackathon`. These are **hints for display/organization only** — not a delivery gate (§11.5). The authoritative niche shown to readers is the model-assigned `scores.category_tag`.
+The non-obvious part is the zone-less string. `Date.parse("2026-07-30 11:30")` resolves against
+the **machine's** zone, so the same code was correct on a Pacific laptop and seven hours early on
+Vercel (UTC) — an 11:30 AM Stanford summit posted as 4:30 AM. `parseToUtc` therefore routes
+zone-less input through `wallClockIn(region.timezone)` instead of the platform parser, and the
+time tests run under `TZ=UTC` so a Pacific dev machine can never hide the bug again.
 
-### 9.6 Bay Area coverage (one region, many cities)
-Phase 1 treats the entire Bay Area as region `sf_bay` — SF, Peninsula (Palo Alto, Mountain View, Menlo Park, Redwood City), South Bay (San Jose, Sunnyvale, Santa Clara), East Bay (Oakland, Berkeley) — with **no sub-region splitting**. Breadth comes from the source set (per-city Eventbrite, Bay-filtered Cerebral Valley, multi-city Google queries). Adapters tag each event's `city` for display; virtual events are tagged so the rubric can down-weight them.
-
----
+A second trap: Luma returns **midnight** for events with no announced time. That has to be
+detected in *both* the local zone and UTC — checking only one lets a real midnight-UTC event be
+discarded, or a placeholder be shown as a 12:00 AM start.
 
 ## 10. Deduplication & Canonicalization
 
@@ -449,10 +505,30 @@ The same event often appears on several platforms with slightly different titles
 - **Logical event** — several source rows for one real event, grouped under a shared `canonical_group`.
 
 ### 10.2 Matching pipeline (signals combined)
-**Stage 1 — deterministic key:** `canonical_key = normalized_title | start_local_date | city` (`start_local_date` in the region tz, not UTC, to avoid midnight mismatches).
-**Stage 2 — fuzzy fallback:** for rows not grouped in stage 1, compare candidates sharing the **same start date** and **same/nearby venue** (`venue_normalized`, same `city`, or lat/lng within ~200m), then compare titles by token-set ratio; group when **≥ ~90**.
+**Stage 0 — same event URL:** rows whose event URLs normalise to the same host+path are one
+event, full stop. Aggregators (Cerebral Valley, Evion, Google) link to the ORIGINAL page, so this
+is what collapses a relisting into the first-party row — `luma.com` and `lu.ma` are the same
+host, and query strings (`?utm_source=cv-events`) are stripped.
+**Stage 1 — deterministic key:** `canonical_key = normalized_title | start_local_date | city`
+(`start_local_date` in the region tz, not UTC, to avoid midnight mismatches).
+**Stage 2 — fuzzy fallback:** for rows not grouped above, compare candidates sharing the **same
+start date** and **same/nearby venue** (`venue_normalized`, same `city`, or lat/lng within ~200m),
+then compare titles by token-set ratio; group when **≥ ~90**.
 
-Combining title + date + venue/city is far more precise than title alone: two different events at one venue on one day stay separate; "AI Founder Dinner" and "AI Founders' Dinner @ SoMa" merge.
+Two hard-won constraints on Stage 2:
+- **City matching tolerates granularity.** Sources describe one place at different levels
+  ("Berkeley" vs "UC Berkeley Campus"), so one city string containing the other counts as nearby.
+- **Containment needs ≥3 tokens in the shorter title.** Containment alone scores 100 whenever the
+  shorter title is a subset, which merged "Builders Night" into "Agentic Builders Night" and
+  "Demo Day" into "YC Demo Day". A ratio floor could not separate those from legitimate merges —
+  "Demo Day"/"YC Demo Day" (72.7) sits *below* "AI Founder Dinner"/"AI Founders' Dinner @ SoMa"
+  (73.9), which must merge — but a token-count guard separates them cleanly.
+
+Combining title + date + venue/city is far more precise than title alone: two different events at
+one venue on one day stay separate. Known residual: an event listed on two different platforms
+with no shared URL, where one row has a venue but no city and the other the reverse, will not
+merge. Fixing it would require trusting "same date + similar title" regardless of location, which
+risks *hiding* genuinely distinct events — a rare duplicate is the better failure.
 
 ### 10.3 Enrichment & primary selection
 Within a `canonical_group`: set `is_primary` on the lowest-`priority` (most authoritative) row; enrich it with the best field from any member (`max(guest_count)`, longest description, union of speakers/hosts, most specific venue, missing coordinates); `status` follows the most recently updated member. Keep all rows (provenance); reads/scoring/delivery use **`is_primary` + `status='active'`** only. Scoring runs once per logical event per feed.
@@ -467,24 +543,56 @@ Curation is the product. Scoring runs in stages and is parameterized per feed. *
 A cheap keyword + signal heuristic (topic match, guest count, notable speakers, source quality), baseline 3/10. Pre-filter and fallback only; never the primary signal for delivered content.
 
 ### 11.2 Editorial score + TL;DR (the moat)
-For each primary `(event, feed)` needing a score, a **top-tier frontier model** is called with the feed's `scoring_rubric` and the **researched people signals** (§11.3). The score is a **quality** score — profile-agnostic (§15 layers fit on top).
+For each primary `(event, feed)` needing a score, the model is called with the feed's
+`scoring_rubric` and the researched people signals (§11.3). The score is a **quality** score —
+profile-agnostic (§15 layers fit on top).
 
-**The `bay_founder` rubric rewards** events that build companies and relationships, weighted heavily by *who's in the room*:
-- **Attendee scale & quality** — guest count, and (since attendee lists are rarely public) the quality inferred from hosts, featured guests, and the hosting organization's prestige.
-- **Speaker quality** — the researched prominence of named speakers/hosts (a partner at a top fund, a founder with an exit, a leading researcher lifts the score; unknown names don't).
-- **Event type** — demo days, founder dinners, pitch nights, investor/LP/GP gatherings, high-signal talks, and **hackathons** (valued as prime co-founder-finding venues), across **AI, Longevity, and fintech/blockchain**, plus vertical-agnostic founder/investor gatherings.
+**What drives the score, in priority order:**
+1. **Relevance** to an investor/founder — is the topic and audience on-target?
+2. **Event type / format** — founder–investor summits, demo days, pitch nights, VC/LP/GP
+   gatherings, curated dinners, hackathons, accelerator/builder-community events, substantive
+   talks.
+3. **Topic importance & timeliness** — frontier AI, agents, robotics/physical AI, longevity,
+   stablecoins/payments.
+4. **Apparent quality** — host reputation, curation/exclusivity, and scale where it indicates a
+   serious event.
 
-It **down-weights** passive/beginner/purely educational content (generic paid courses, lectures with no networking, anonymous mixers) and purely virtual events unless exceptional.
+**Speakers count for much more than hosts — and an unknown room never lowers a score.**
+This is the biggest correction from v5, which weighted "who's in the room" as the dominant
+signal. Two things forced it: named attendee lists are rarely published, so weighting the room
+wrote good events down to the 4s for lacking data; and organisers appear on *every* listing, so
+counting them as the line-up inflated ordinary meetups. Now:
+- **Billed speakers** are a strong lift, judged on seniority and recognisability, not head-count.
+- **The organiser** is a mild one. A `host_quality` signal is informed by a **HOST TRACK RECORD**
+  built from our own history — events organised, average observed attendance, average prior
+  score. Attendance carries the weight because it is observed from the platforms; the prior score
+  is labelled in the prompt as our own earlier opinion, because feeding a model its own
+  judgments back as independent evidence ratchets a host upward forever. Only organisers with
+  ≥3 events are reported.
+- **Absence of names never caps or lowers the score.** An event can and should reach 8–10 with
+  nobody billed.
 
-Output is **structured JSON** mapping to columns, including a `signals` breakdown, the model-assigned niche, and the `tldr`:
+**The line-up is usually in prose, not in the structured fields.** Platforms routinely leave the
+guest list empty — or fill it with unrelated attendees — while the write-up names the speakers
+("Invited Speaker: 1) …"). The scorer therefore extracts the billed line-up itself into
+`signals.key_speakers`, and delivery prefers those names. Model extraction handles any phrasing;
+a regex would handle one listing.
+
+Output is **structured JSON** via a forced tool call, mapping to columns:
 ```json
-{ "score": 8.7, "tier": "dont_miss", "category_tag": "ai",
-  "signals": {"attendee_count": 40, "attendee_quality": 9, "speaker_quality": 9},
+{ "score": 8.7, "category_tag": "ai", "industry_relevant": true,
+  "signals": {"attendee_count": 40, "speaker_quality": 9, "host_quality": 4,
+              "key_speakers": ["Yufei Zhao — Member of Technical Staff, OpenAI"]},
   "tldr": "Dinner with the founders of two Series-A AI-infra startups + two a16z partners — small, high-signal room." }
 ```
-Prompt for JSON only; parse defensively; store in `scores`. The `tldr` must be specific and earn the click — the researched people notes are what let it name names.
 
-**Rubric development.** The v1 rubric is drafted before build (Milestone 0) and evaluated against a labeled set of 30–50 real events (marked from a founder/investor's point of view as don't-miss / strong / noise). Iterations are measured against this set — never tuned on vibes.
+**Description quality is a scoring input, not a detail.** Stored descriptions once averaged ~214
+characters — the list-endpoint teaser — so the scorer was judging events nearly blind and could
+not have seen a billed line-up even in principle. Enriching from the event page raised the
+in-window average past 650, which is what made speaker extraction possible at all.
+
+**Rubric development.** Versioned in code (`RUBRIC_VERSION`); bumping it re-scores the catalogue
+on the next runs. Iterations are measured against a labeled set, never tuned on vibes.
 
 ### 11.3 Speaker & host research → the speaker profile database (§8 `people`)
 "Who is in the room" is a first-class signal, so before scoring the pipeline resolves an event's named speakers/hosts and researches each one, building a persistent **speaker/host profile database** (`people`).
@@ -513,47 +621,122 @@ Because the rubric already knows the reader and the niches, **relevance is enfor
 
 Telegram is the primary consumption surface at launch — a **public channel** plus an on-demand bot, both reading the store.
 
-### 12.1 The channel = the digest
-A per-feed **public** Telegram channel receives scheduled ranked digest posts, driven by `feeds.post_schedule`:
-- **Daily** at 7:00 AM PT — today's and tomorrow's top events (events repeat until they happen — the built-in reminder).
-- **Weekly** Sunday at 6:00 PM PT — the ranked shortlist for the next 7 days, so the week is plannable.
+### 12.1 The group = the digest
+A per-feed **public** Telegram group receives scheduled ranked digests, driven by
+`feeds.post_schedule`:
+- **Daily at 17:00 PT**, covering **tomorrow** — an evening preview, so the reader can plan the
+  next day. (v5 posted at 07:00 covering today+tomorrow.) The gather chain runs earlier the same
+  afternoon so the post reports fresh data; the post itself is held until the chain has landed.
+- **Weekly Sunday 18:00 PT** — the ranked shortlist for the next 7 days.
 
-Posts are tier-grouped (🔥 Must Attend first), one block per event: score, tier icon, linked title, time (PT), city, guest count, notable speakers (with researched notes where strong), model-assigned niche tag, and the one-line **TL;DR**. Each event carries an inline **"View event →"** button linking to the source; callbacks are logged to `click_events`. Every post is logged to `digest_posts`. Long weekly posts split under Telegram's 4096-char limit (Appendix B). A zero-event weekly post uses a short "quiet week" template.
+**One compact message. No inline buttons. Direct source links. No per-event summary.** Each block:
+
+```
+🤖 <linked title>
+Tue, Jul 28 6 PM · 📍 San Francisco · 👥 25 · <Official site>
+Lucy Lawlor, Betty Wu, Edwina Yeo 🎤
+```
+
+- The **category emoji is the bullet** (🤖 AI · 🧬 Longevity · ₿ Web3 · 🧑‍💼 Founders · 🛠️ Hackathon),
+  with 🎤 explained in the legend as "who's speaking".
+- **Attendance is omitted when unknown** rather than printed as `👥 0`, which read as a dead event.
+- **Location** is normalised to the town, since sources write it at wildly different granularity.
+- A **deduped multi-source event offers each distinct destination** (e.g. Luma *and* the host's
+  own site); links dedupe by destination AND by label, so two Eventbrite listings of one event
+  don't present a meaningless choice.
+- The **daily is trimmed**: every Must Attend, plus the best ~40% of the lower tiers, with a
+  footer linking the rest at TLDRevents.com. An untrimmed list filled the whole message.
+- Long posts truncate under the 4096-char limit; a zero-event weekly uses a "quiet week" template.
+
+Every post is logged to `digest_posts`; a forced/manual send is recorded as the day's post so the
+scheduler cannot post on top of it.
 
 ### 12.2 The bot = on-demand
-A webhook-based bot (no polling) answers `/today`, `/tomorrow`, `/week`, `/nextweek` in the same ranked, tier-grouped format. Public channel members can query it; an optional `TELEGRAM_ALLOWED_CHAT_IDS` whitelist exists for locking down admin/test commands.
+A webhook-based bot (no polling) answers in the same format. Alongside `/today`, `/tomorrow`,
+`/week`, `/nextweek`, **bare-word shortcuts** work: `t`, `tmr`, `w`, `nw`, and **any weekday name**
+(`thursday`, `thurs`, `thu`) resolving to that day's next occurrence, today included. A shortcut
+only fires when the word is the whole message, so ordinary chat can't trigger a digest. Every
+reply header names its actual date ("Today — Tue Jul 28"), since a relative word alone is
+ambiguous when read later.
+
+`/usehere` (admin-gated) rebinds the scheduled digests to the current chat, so the bot can be
+moved to a new group without a redeploy.
+
+**Operational note:** bare-word shortcuts require group privacy to be disabled for the bot in
+BotFather, and **the webhook must not sit behind a redirect** — Telegram does not follow them, so
+a change of primary domain silently kills the bot with no error anywhere.
 
 ### 12.3 Digest poster worker
-```python
-# runs every ~15 min
-for feed in enabled_feeds():
-    for kind in due_posts(feed, now()):          # daily @ 7:00 PT, weekly Sun @ 18:00 PT
-        window = window_for(kind, feed.region.timezone)   # local calendar days
-        events = query_primary_events(           # is_primary AND status='active'
-            region=feed.region_id,
-            window=window,
-            min_score=feed.min_score,            # relevance = score, not category (§11.5)
-            feed_id=feed.id
-        )  # ordered by starts_at, then score desc
-        if not events and kind == 'daily':
-            continue                             # no empty daily posts; weekly posts a "quiet week" note
-        for chunk in render_digest_messages(feed, events, kind):
-            msg_ids = tg_send(feed.telegram_channel_id, chunk, inline_buttons(events))
-        log_digest_post(feed, kind, window, [e.id for e in events], msg_ids)
-```
+Runs as the final stage of the single pipeline cron (§16), not as its own job. For each enabled
+feed it resolves whether a `daily` or `weekly` post is due from `feeds.post_schedule`, in the
+feed's region timezone, then:
+
+1. Query primary, active, in-region events in the window clearing `min_score`.
+2. Skip an empty daily entirely; an empty weekly emits the "quiet week" note.
+3. Render one message (§12.1) and send.
+4. Log to `digest_posts` — including a failed send, so a total failure is retryable while a
+   partial one is not re-sent from scratch.
+
+Dueness is a **window, not an instant**: due from the scheduled time for several hours after, so a
+missed cron tick delays rather than drops the day, with `postedSince` guaranteeing one post. Both
+`daily` and `daily_manual` count as that day's post.
 
 ---
 
 ## 13. Delivery: Web (public)
 
-The public face and discovery surface — SEO-indexed from launch. Next.js (App Router) reading the same store:
-- **Four ranked views in the top nav — Today · Tomorrow · This Week · Next Week.** Each lists events **ranked by score (highest first)**, grouped into tier bands (🔥 Must Attend / ⭐ Strong Pick), only showing events that clear the feed's `min_score`.
-- **Every card shows the score out of 10**, the tier icon, the model-assigned niche/category tag, time (visitor-localized via `Intl`, PT default), **city**, guest count, notable researched speakers, and the one-line **TL;DR**.
-- **Clicking a card opens the event's source/signup page in a new tab** (`target="_blank"`), routed through `/api/click` which logs the outbound click to `click_events` then 302-redirects to the source (relative path, so it works on any deploy domain).
-- **Filters** by niche (`scores.category_tag`) and tier; later, search. Niche chips are derived from the full result set so switching niche never hides the others.
-- **"Join on Telegram" CTA** (link configurable via `NEXT_PUBLIC_TELEGRAM_URL`) and email signup in Phase 2.
-- **SEO:** per-view pages + `sitemap.xml`/`robots.txt`; pages server-render for crawlability and read the store live so new scores appear without a rebuild.
-- **Canceled events** (Phase 1) are filtered to `status='active'`; struck-through display for a week is a Phase-2 polish.
+The public face and discovery surface. Next.js (App Router) reading the same store:
+
+- **Four ranked horizons — Today · Tomorrow · This Week · Next Week** — plus **per-day pages** at
+  `/day/YYYY-MM-DD` covering four weeks ahead. The horizon you're on leads the nav at full size;
+  the other three shrink to chips, costing one band instead of four.
+- **A browse calendar** shows four weeks with the curated event count per day (the count doubles
+  as a heat indicator), each day linking to its own page. It is open beside the headline on wide
+  screens — using width the hero was wasting — and collapsed under "Select by date" on a phone,
+  re-evaluated only when the breakpoint is actually crossed.
+- **One curated list, no TLDR/All toggle.** Events must be industry-relevant and clear a **6.5
+  visible floor**; everything relevant below that sits behind "show N lower-ranked events".
+  Choosing a tier explicitly bypasses the floor.
+- **When a week runs dry, it falls forward.** "This week" shrinks as the week goes on and by
+  Sunday covers a single day, which regularly left an empty board while the week ahead was full.
+  If *nothing* clears the floor, next week is appended and a badge in the date tile says so —
+  otherwise next week's dates under a "This Week" heading read as a broken filter.
+- **Every card** shows the score to one decimal, tier, niche tag, time (visitor-localized via
+  `Intl`, PT default), location, attendance, researched notables and the one-line TL;DR.
+- **Multi-source events offer a choice.** Where a deduped event exists in more than one place,
+  the card lists each destination and clicking the card opens a chooser dialog.
+- **Clicks route through `/api/click`**, which logs to `click_events` then 302s to the source.
+  An `alt` parameter selects an alternate destination, validated against the same canonical group
+  — the target is always resolved from the database, never from the query string, so it cannot be
+  used as an open redirect.
+- **Filters** (topic, tier) live in a collapsible panel whose summary reports what's active, so a
+  filter set earlier can't masquerade as missing events.
+- Mobile is the priority surface: measured, the first event card starts at y≈514 on a 390×844
+  viewport with the next one peeking.
+
+### 13.1 SEO & answer-engine optimisation
+
+Both audiences are served by the same work: making the page's meaning explicit rather than
+inferable from styled markup.
+
+- **schema.org structured data.** Each board page emits a `CollectionPage` whose `mainEntity` is
+  an **`ItemList` of `Event`s in ranked order**, with times, place, description and the curated
+  score as an `AggregateRating`; the layout adds `WebSite` + `Organization`. The ordering is the
+  product's actual claim — *these* events, ranked *this* way, for *this* day — and is what lets an
+  answer engine say "the top event on Thursday is X". Event `url` cites the source's registration
+  page, not the click redirect, and **only events visible by default are described**, since
+  marking up the hidden tail would claim more than the page delivers.
+- **Crawl surface.** Per-route titles and descriptions, canonical URLs, a generated OG image, and
+  a sitemap covering all 32 pages including every day page (the root page shares a segment with
+  the root layout, so the layout's title *template* does not apply there — it needs its own).
+- **`robots.txt` names the AI crawlers explicitly** — GPTBot, OAI-SearchBot, ChatGPT-User,
+  ClaudeBot, PerplexityBot, Google-Extended, CCBot and others — rather than relying on the
+  wildcard, so a later tightening can't silently cut off the engines we want indexing this.
+- **`/llms.txt`** gives a model the site's purpose, the page map, **what the 0–10 score means** so
+  a number is never quoted without its definition, and the current top events with times, places
+  and source links. Regenerated per request: a stale events list is worse than none.
+- Event titles are real headings inside an h1→h2→h3→h4 hierarchy, so their text is indexed as page
+  topics rather than styled bold.
 
 Additive — reads the same store, so no schema change to add it.
 
@@ -594,16 +777,40 @@ create table profiles (
 
 ## 16. Scheduling & Jobs
 
-| Job | Cadence | Action |
-|-----|---------|--------|
-| **Ingestion** | every 2–4h (tunable) | Run enabled source adapters → upsert `events` (UTC) |
-| **Dedup / canonicalize** | after each ingestion | Group source rows, set `is_primary`, enrich |
-| **Speaker research** | after dedup, before scoring | Resolve & research new named people (Google via Browserbase) → `people` database |
-| **Scorer** | after research | Score new/changed primary events in-region for enabled feeds |
-| **Digest poster (Telegram)** | every ~15 min | Post due public-channel digests per `feeds.post_schedule` |
-| **Telegram webhook** | always-on | Handle on-demand bot commands in real time |
+**One cron job drives everything.** Vercel dropped scheduled ticks twice, in different ways:
+jobs at minute offsets never fired at all, and later, with everything at minute 0, exactly one
+job ran out of each pair that shared a trigger minute — a missed dedup put a duplicate event in
+the digest. Rather than keep guessing the scheduler's rules, the project registers a **single**
+cron; with one job there is nothing to collide with, and a dropped tick costs ten minutes.
 
-Ingestion/dedup/research/scorer run under system cron; the digest poster needs finer granularity (every 15 min). One advisory lock per job type prevents overlap. Schedules are reasoned in UTC; display/windowing use IANA timezone data.
+`/api/cron/pipeline` runs **every 10 minutes** and performs **at most one stage per tick**, so no
+invocation approaches the function time limit.
+
+| Stage | Local hour | Action |
+|-------|-----------|--------|
+| `ingest` | from 15:00 PT | Core sources → upsert `events` (UTC) |
+| `ingest_extra` | after ingest | Long-tail sources (Partiful, Google, Evion) |
+| `dedup` | after ingest | Luma backfill (attendance, times, descriptions) then group + enrich |
+| `research` | after dedup | Resolve & research new named people → `people` |
+| `score` | after research | Score new/changed primary events |
+| `digest` | from 17:28 PT | Post if due per `feeds.post_schedule` |
+
+**Stage completion has two shapes.** Most stages are *once a day*: attempted, then done, so a
+missed tick simply retries on the next one. **Scoring is a queue**, not an event — it is
+batch-limited per run (40) to stay inside the timeout, so "attempted today" would cap it at one
+batch. It declares a backlog check and keeps running until the queue is empty, bounded by
+`DAILY_SCORE_CAP` so a permanently-failing event can't become unbounded spend. (This was a real
+regression: after consolidating the crons, 327 of 377 events in the window sat unscored — i.e.
+invisible to both the site and the digest — because capacity had been sized for three daily
+slots.)
+
+**The digest tolerates a missed tick.** It is due *from* its scheduled time for several hours
+after, not only during that hour; a missed tick delays the post instead of losing the day. A
+forced/manual send counts as that day's post, so the scheduler can't post on top of it.
+
+A lease-based `job_locks` row per stage prevents overlap. Schedules are reasoned in UTC; the
+local run hour is resolved with IANA timezone data, so each stage is scheduled at both candidate
+UTC hours and the gate admits only the one that is genuinely the right local hour — DST-safe.
 
 ---
 
@@ -611,16 +818,63 @@ Ingestion/dedup/research/scorer run under system cron; the digest poster needs f
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Postgres connection string |
-| `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` | Browser automation (event scrapes incl. Google + Google speaker research) |
-| `LLM_API_KEY` | Editorial scorer + speaker-research synthesis (top-tier model) |
-| `MEETUP_API_TOKEN` | Official Meetup GraphQL API (optional, future supplement) |
+| `DATABASE_URL` / `DATABASE_URL_UNPOOLED` | Postgres (pooled for runtime, direct for DDL/migrations) |
+| `LLM_PROVIDER` | `anthropic` (default), or any OpenAI-compatible host — see below |
+| `LLM_BASE_URL` | Only for a host without a built-in base URL |
+| `LLM_API_KEY` | Editorial scorer + speaker-research synthesis |
+| `SCORING_MODEL` / `RESEARCH_MODEL` | Model ids; defaults are per provider AND per task |
+| `BROWSERBASE_API_KEY` / `BROWSERBASE_PROJECT_ID` | Browser automation (scrapes + speaker research) |
 | `TELEGRAM_BOT_TOKEN` | Bot API |
-| `TELEGRAM_WEBHOOK_SECRET` | Path/header secret for the bot webhook |
-| `TELEGRAM_CHANNEL_ID` | Default public digest channel (per-feed override on `feeds`) |
-| `TELEGRAM_ALLOWED_CHAT_IDS` | Admin/test command whitelist (optional) |
+| `TELEGRAM_WEBHOOK_SECRET` | Header secret for the bot webhook |
+| `TELEGRAM_CHANNEL_ID` | Default digest chat (per-feed override on `feeds`) |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Admin command whitelist (`/usehere`, forced posts) |
+| `CRON_SECRET` | Guards the cron endpoint |
+| `NEXT_PUBLIC_SITE_URL` | Canonical origin — drives canonical tags, sitemap, structured data, digest footer |
+| `NEXT_PUBLIC_TELEGRAM_URL` | "Join on Telegram" link |
+| `SCHEDULE_TZ`, `PIPELINE_START_HOUR`, `DAILY_SCORE_CAP`, `SCORE_BATCH`, `SCORE_CONCURRENCY` | Pipeline tuning (all defaulted) |
 
-Phase 2 adds `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `SENDING_DOMAIN`, `PHYSICAL_ADDRESS` (Appendix D). Feeds, sources, regions, and (Phase 3) profiles are **data, not env**.
+Feeds, sources, regions and (Phase 3) profiles are **data, not env**.
+
+### 17.1 Switching the AI model
+
+Scoring and research share one client. `LLM_PROVIDER=anthropic` uses the Claude SDK; **any other
+value** is treated as an OpenAI-compatible `/chat/completions` host — `deepseek`, `qwen`,
+`openrouter`, `together`, `groq`, `openai` carry built-in base URLs, anything else needs
+`LLM_BASE_URL`. That path is a plain fetch rather than a second SDK: the request shape is stable
+across those hosts and only one forced tool call is needed.
+
+```
+LLM_PROVIDER=deepseek      LLM_PROVIDER=qwen
+LLM_API_KEY=sk-...         LLM_API_KEY=sk-...
+SCORING_MODEL=deepseek-chat  SCORING_MODEL=qwen-plus
+RESEARCH_MODEL=deepseek-chat RESEARCH_MODEL=qwen-turbo
+```
+
+Structured output is forced via `tool_choice` on both paths, with JSON salvaged from a prose
+reply as a fallback — cheaper models are exactly where that happens, and losing the event would
+be worse. **Tool calling is effectively required**; a host without it degrades to best-effort.
+
+Two operational notes: switching model does **not** re-score the existing catalogue (scoring is
+incremental — bump `RUBRIC_VERSION` and the feed's `rubric_version` to force it), and
+`feeds.model` overrides `SCORING_MODEL` per feed, which is how to A/B a cheaper model on one
+feed before committing.
+
+**Cost shape.** Scoring dominates: one call per new/changed event at roughly 4–6k input tokens
+(rubric + description), a few hundred out. Research is a second, smaller call per newly-seen
+person. At ~40 new events a day the per-million *input* price is what decides the bill.
+
+Phase 2 adds `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `SENDING_DOMAIN`, `PHYSICAL_ADDRESS`
+(Appendix D).
+
+### 17.2 Database access control
+
+All tables have **Row-Level Security enabled with no policies**, and the `anon`/`authenticated`
+grants are revoked (including default privileges for future tables). Supabase serves the public
+schema over PostgREST using the anon key, and that key is designed to be public — so RLS, not the
+key, is the boundary. The pipeline is unaffected because it connects over the Postgres protocol
+as the table owner, and owners bypass RLS; `FORCE ROW LEVEL SECURITY` is deliberately **not** set,
+as it would apply RLS to the owner and break the pipeline. `service_role` keeps its grants for
+the Supabase dashboard.
 
 ---
 
@@ -659,21 +913,14 @@ Phase 2 adds `RESEND_API_KEY`, `RESEND_WEBHOOK_SECRET`, `SENDING_DOMAIN`, `PHYSI
 ### Appendix A — Source Extraction Recipes
 
 **Browser session (residential proxy; reused across browser scrapes and speaker research):**
-```python
-import os
-from browserbase import Browserbase
-from playwright.async_api import async_playwright
-
-async def create_browser_session():
-    bb = Browserbase(api_key=os.environ["BROWSERBASE_API_KEY"])
-    session = bb.sessions.create(
-        project_id=os.environ["BROWSERBASE_PROJECT_ID"],
-        proxies=[{"type": "residential", "country": "US"}],
-    )
-    pw = await async_playwright().start()
-    browser = await pw.chromium.connect_over_cdp(session.connect_url)
-    page = browser.contexts[0].pages[0]
-    return pw, browser, page, session
+```ts
+const bb = new Browserbase({ apiKey: process.env.BROWSERBASE_API_KEY! });
+const session = await bb.sessions.create({
+  projectId: process.env.BROWSERBASE_PROJECT_ID!,
+  proxies: [{ type: "residential", country: "US" }],
+});
+const browser = await chromium.connectOverCDP(session.connectUrl); // playwright-core
+const page = browser.contexts()[0].pages()[0];
 ```
 Residential proxies avoid IP blocks. Reuse one session across browser scrapes and speaker lookups; space navigations 5–10s apart; on a source failure, proceed with the rest.
 
@@ -683,26 +930,41 @@ Residential proxies avoid IP blocks. Reuse one session across browser scrapes an
 - **Partiful** (`browser`): read `window.__NEXT_DATA__.props.pageProps` (`trendingSection.items[].event`, `sections[].items[].event`, `feedItems[].event`): `id`, `title`, `startDate`, `locationInfo.mapsInfo.name`, `goingGuestCount`, `interestedGuestCount`, `description`. Null guest counts → 0. Times mixed → localize naive to region tz.
 - **Google** (`browser`, residential proxy mandatory): run the configured founder/investor + hackathon queries with 3s+ between them; extract the event carousel/rich results and event-platform links (Luma, Eventbrite, Partiful, Meetup, university/VC pages). Heavy overlap with other sources → resolved by §10. Adds unique long-tail inventory and South Bay / Peninsula events the other sources miss. Highest block risk of the sources; proxies + spacing mitigate. (Optional future supplement: official Meetup GraphQL API.)
 
+- **Luma detail & page enrichment** (HTTP, no browser): the list endpoint returns a ~200-char teaser and **no attendance**, both of which the rubric needs. `GET https://api.luma.com/event/get?event_api_id={slug_or_api_id}` supplies guest count and the full record; the event page's JSON-LD supplies the full description. This path is rate-limited in practice — a ~200-page burst got a laptop IP 429'd — so it runs at concurrency 2 with a ~350ms pause, a per-run cap, exponential backoff honouring `Retry-After`, and a circuit breaker that stops the run rather than losing the queue.
+- **Supermomos** (`browser`): community events page; cards carry title, link, date/time and venue.
+- **Evion** (`browser`, priority 55): an aggregator that mostly relists Luma/Partiful and links to the ORIGINAL page, so its rows merge into the first-party ones via Stage-0 URL dedup (§10.2). Low priority keeps the first-party row authoritative; its unique contribution is Evion-hosted events and long-tail platforms.
+- **Conference sites** (`site_jsonld`, HTTP): standalone conference domains publish schema.org `Event` markup already. The adapter walks `@graph` and nested arrays, accepts `Event` subtypes (`BusinessEvent`, `EducationEvent`, …), normalizes `location` (`Place` → venue/city), and applies the Bay Area guard. This closed a real gap: a robotics developer conference at Fort Mason existed on no platform being scraped. Adding a conference is one URL in the source config.
+
 **Speaker/host research (Google via Browserbase → `people`):** reuse the same residential session. For each unresolved name, search e.g. `"{name}" {company_or_context}` (and, if thin, `{name} LinkedIn`); capture the knowledge panel (title/company/description), the top organic results (LinkedIn `/in/`, Crunchbase, company/fund about pages), and any news. Hand the captured text to the model to synthesize the structured profile (§11.3) and upsert into `people` keyed by normalized name. Skip anyone already fresh in the database. Google's DOM shifts, so prefer robust text extraction (knowledge-panel labels, result titles/snippets) over brittle fixed selectors, and monitor for drift.
 
 ### Appendix B — Telegram Formatting
 
-**Time display uses IANA timezone data (no fixed offset):**
-```python
-from zoneinfo import ZoneInfo
-def fmt_local(starts_at_utc, tz: str) -> str:      # tz = channel/region tz
-    return starts_at_utc.astimezone(ZoneInfo(tz)).strftime("%-I:%M%p")   # DST-correct
+**Times are rendered from IANA timezone data, never a fixed offset**, so DST is correct without
+special-casing. Zone-less source strings are interpreted as a wall clock *in the region's zone* —
+`Date.parse` resolves them against the machine's zone, which is right on a Pacific laptop and
+seven hours wrong on Vercel (UTC). That bug printed an 11:30 AM Stanford summit as 4:30 AM; the
+time tests now run under `TZ=UTC` so the machine zone can never mask it again.
+
+**Event block (HTML parse mode).** The category emoji IS the bullet — there is no separate dot:
+
 ```
-**Event block (HTML parse mode):**
+{emoji} <b>{score}</b> <a href="{link}">{title}</a>
+   {time} · {short_location} · 👥 {attendance} · {speakers} 🎤
+   {tldr}
 ```
-{icon} <b>{score}/10</b> <a href="{link}">{title}</a>
-  🕐 {time} · 📍 {city} · 👥 {guest_count} · 🎤 {notable_speakers}
-  {tldr}
-[ View event → ]   ← inline button; callback logged to click_events
-```
-**Niche tags (model-assigned `category_tag`):** 🤖 AI · 🧬 Longevity · 💸 Fintech/Blockchain · 🤝 Founder/Investor · 🛠️ Hackathon.
-**Message size:** cap 4096 chars; truncate at ~4000 or split long weekly posts. Convert any `**text**` to `<b>text</b>`.
-**Supergroup migration:** on HTTP 400 with `parameters.migrate_to_chat_id`, update the stored chat id and retry.
+
+- **Legend** (footer of every digest): `🤖 AI · 🧬 Longevity · ₿ Web3 · 🧑‍💼 Founders · 🛠️ Hackathon · 🎤 Who's speaking`
+- **Speakers, not hosts.** The 🎤 line bills the model's `key_speakers` first, then the adapter's
+  speaker list, and falls back to hosts only when both are empty (§11.2). The mic sits at the END
+  of the names.
+- **Location is shortened** to the recognisable part ("Frontier Tower", "Palo Alto"), not a full
+  street address.
+- **Multi-source events** carry one primary link; the alternates live on the web board's link
+  chooser (§13).
+- **Size:** cap 4096 chars. A daily digest that would overflow keeps every Must Attend and ~40% of
+  the rest, then appends `… +N more at TLDRevents.com` rather than truncating mid-event.
+- **Supergroup migration:** on HTTP 400 with `parameters.migrate_to_chat_id`, update the stored
+  chat id and retry.
 
 ### Appendix C — Source Characteristics & Operational Notes
 
