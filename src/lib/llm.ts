@@ -323,6 +323,7 @@ async function structuredCallOpenAI<T>(
       _in += json.usage?.prompt_tokens ?? 0;
       _out += json.usage?.completion_tokens ?? 0;
 
+      _lastMode = forceTool ? "forced-tool" : useJsonMode ? "auto-tool+json" : "auto-tool";
       const msg = json.choices?.[0]?.message;
       const args = msg?.tool_calls?.[0]?.function?.arguments;
       if (args) return JSON.parse(args) as T;
@@ -343,6 +344,17 @@ async function structuredCallOpenAI<T>(
 
 /** Reasoning models need room for the thinking that precedes the answer. */
 const THINKING_MAX_TOKENS = 4096;
+
+/**
+ * How the last OpenAI-compatible call had to be made. Whether a model accepts a
+ * FORCED tool call decides whether the schema is guaranteed by the API or merely
+ * requested in the prompt — a real difference in reliability, and not something
+ * a model's name tells you. Reported by /api/cron/llm-check.
+ */
+let _lastMode: "forced-tool" | "auto-tool+json" | "auto-tool" | null = null;
+export function lastCallMode() {
+  return _lastMode;
+}
 
 /** Pull a JSON object out of a prose reply, including one fenced in markdown. */
 function parseLooseJson(text: string): unknown | null {
@@ -402,7 +414,12 @@ export function configSummary() {
 
 /** One minimal live call, so a broken provider reports its real error instead of
  *  being swallowed into a zero-score run. */
-export async function selfTest(): Promise<{ ok: boolean; error?: string; sample?: unknown }> {
+export async function selfTest(): Promise<{
+  ok: boolean;
+  error?: string;
+  sample?: unknown;
+  mode?: string | null;
+}> {
   try {
     const sample = await structuredCall({
       system: "You are a connectivity check. Always call the tool.",
@@ -418,8 +435,8 @@ export async function selfTest(): Promise<{ ok: boolean; error?: string; sample?
         },
       },
     });
-    return { ok: true, sample };
+    return { ok: true, sample, mode: lastCallMode() };
   } catch (e) {
-    return { ok: false, error: describe(e) };
+    return { ok: false, error: describe(e), mode: lastCallMode() };
   }
 }
