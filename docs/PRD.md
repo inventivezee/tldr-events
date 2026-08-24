@@ -885,16 +885,26 @@ which is the fastest way to tell "wrong key" from "wrong model name" from "wrong
 to fit inside the route's `maxDuration` (300s), and a reasoning model changes that arithmetic
 sharply. Measured on the same 40 events:
 
-| | input/event | output/event | latency/event | batch of 40 |
+| | input/event | output/event | latency/**call** | batch of 40 @ conc 6 |
 |---|---|---|---|---|
-| `deepseek-chat` | 2,725 | 219 | 0.6s | 24s |
-| `deepseek-v4-pro` | 3,270 | 1,282 | 5.8s | **231s — 77% of the limit** |
+| `deepseek-chat` | 2,725 | 219 | 2.4s | ~16s |
+| `deepseek-v4-flash` | 3,207 | 916 | 10.4s | ~70s (23% of the limit) |
+| `deepseek-v4-pro` | 3,270 | 1,282 | 23.1s | ~154s (51% of the limit) |
 
-Thinking is nearly all of that: ~6× the output tokens and ~10× the wall clock for ~1.2× the input.
-A batch sized for a direct model runs a reasoning model to the edge of the function limit, where
-one slow call loses the whole batch. Pro therefore runs `SCORE_BATCH=24` with
-`SCORE_CONCURRENCY=6` (~92s). **Re-measure both when changing model** — the numbers above are the
-method, not a constant.
+Thinking is nearly all of the difference: 4–6× the output tokens and 4–10× the latency of a direct
+model for ~1.2× the input. Measure `latency/call`, not batch wall-clock — it is the property of
+the model, and batch time is then `batch ÷ concurrency × latency`, which is what has to fit inside
+`maxDuration`. Production runs flash at `SCORE_BATCH=40`, `SCORE_CONCURRENCY=6`. **Re-measure on
+every model change** — the numbers above are the method, not constants.
+
+**Flash and pro scored the same.** Against an identical Claude baseline: pro drifted +0.20 (mean
+|Δ| 0.61, n=21), flash +0.18 (mean |Δ| 0.56, n=28) — indistinguishable at that sample size, with
+neither dropping a TL;DR. Pro's extra thinking bought no measurable editorial quality here, at ~1.4×
+the output tokens and ~2.2× the latency, so flash is the default.
+
+**Neither v4 model accepts a forced tool call** — both answer 400 "Thinking mode does not support
+this tool_choice" and fall back to the prompt-and-parse path (§ the `auto-tool+json` mode reported
+by `llm-check`). A model's name does not tell you which contract you get; ask the endpoint.
 
 **Cost shape.** Scoring dominates: one call per new/changed event at roughly 4–6k input tokens
 (rubric + description), a few hundred out. Research is a second, smaller call per newly-seen
