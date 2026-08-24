@@ -2,7 +2,7 @@
 // Living, versioned, curator-owned, evaluated against the labeled set (see eval/).
 // Bump RUBRIC_VERSION on any change so incremental scoring re-scores against it.
 
-export const RUBRIC_VERSION = 6;
+export const RUBRIC_VERSION = 7;
 
 export const BAY_FOUNDER_RUBRIC_V1 = `You are the editorial curator for **TLDR Events — Bay Area, Founders & Investors**.
 
@@ -52,6 +52,19 @@ Do not confuse the two. Organisers appear on almost every listing, so treating t
 line-up inflates ordinary meetups. The billed line-up frequently appears only in the
 DESCRIPTION prose while the structured guest list is empty or filled with unrelated
 attendees; read the description and go by who is actually billed to speak.
+
+### Technical substance is a modest counterweight to the room
+An event with real technical depth — a research talk, an engineering deep-dive, an
+open-source or infrastructure summit, a clinical/longevity science session, a hard-tech lab
+or factory open house — earns a **small lift, on the order of +0.3 to +0.5**, over a purely
+social or networking event of otherwise equal relevance. The reader is scouting emerging
+technologies and teams to back, so learning what is actually being built is part of that
+job, not a detour from it.
+
+Keep this proportionate. It is a thumb on the scale, **not** a reordering: a well-curated
+founder–investor dinner still outranks a routine technical meetup, and a beginner or
+marketing-flavoured "intro to X" session earns nothing here. The lift is for genuine depth,
+not for the word "technical" appearing in the description.
 
 ## Scoring bands (0–10, one decimal)
 - **8.0–10.0 — Must Attend:** highly relevant AND compelling on the merits — a strong

@@ -1,5 +1,6 @@
 // Idempotent seed: upserts the launch region, sources, and the bay_founder feed.
-// Safe to re-run; the feed's rubric/model are refreshed from code on each run.
+// Safe to re-run; the feed's rubric is refreshed from code on each run. The
+// model is NOT — it comes from deployment config (see feeds.model below).
 import "./_env";
 import { getDb, sqlClient, schema } from "../src/db/client";
 import { SEED_REGION, SEED_SOURCES, SEED_FEED } from "../src/seed/data";
@@ -42,7 +43,11 @@ async function main() {
     console.log(`source: ${s.id}`);
   }
 
-  const model = process.env.SCORING_MODEL || "claude-opus-4-8";
+  // feeds.model is a DELIBERATE per-feed override, not a seed side effect. Seeding
+  // it from a local env var is what pinned "claude-opus-4-8" into the database and
+  // silently broke every scoring call after the provider moved to DeepSeek — the
+  // pin outranks SCORING_MODEL. Leave it null so deployment config governs, and
+  // set it by hand for a genuine per-feed A/B.
   const channelId = process.env.TELEGRAM_CHANNEL_ID || null;
 
   await db
@@ -55,7 +60,7 @@ async function main() {
       sourceIds: SEED_FEED.source_ids,
       scoringRubric: BAY_FOUNDER_RUBRIC_V1,
       rubricVersion: RUBRIC_VERSION,
-      model,
+      model: null,
       minScore: SEED_FEED.min_score,
       curator: SEED_FEED.curator,
       postSchedule: SEED_FEED.post_schedule,
@@ -70,7 +75,7 @@ async function main() {
         sourceIds: SEED_FEED.source_ids,
         scoringRubric: BAY_FOUNDER_RUBRIC_V1,
         rubricVersion: RUBRIC_VERSION,
-        model,
+        // model deliberately NOT overwritten — see above.
         minScore: SEED_FEED.min_score,
         curator: SEED_FEED.curator,
         postSchedule: SEED_FEED.post_schedule,
@@ -79,7 +84,9 @@ async function main() {
         ...(channelId ? { telegramChannelId: channelId } : {}),
       },
     });
-  console.log(`feed: ${SEED_FEED.id} (model=${model}, rubric v${RUBRIC_VERSION})`);
+  console.log(
+    `feed: ${SEED_FEED.id} (model: from env, rubric v${RUBRIC_VERSION})`,
+  );
 
   console.log("Seed complete.");
   await sqlClient().end();
